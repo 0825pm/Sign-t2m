@@ -1,6 +1,6 @@
 _target_: src.models.nets.light_final.LightT2M
 motion_dim: ${data.motion_dim}
-max_motion_len: 200
+max_motion_len: 301
 text_dim: 512
 pos_emb: "cos"
 stage_dim: "256*4"

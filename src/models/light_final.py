@@ -75,6 +75,13 @@ class LightMotionGeneration(L.LightningModule):
     def configure_evaluator_and_metrics(self, dataset_name, evaluator):
         self.train_metrics = MetricCollection({"loss": MeanMetric()})
 
+        # evaluator=null 처리
+        if evaluator is None:
+            self.t2m_evaluator = None
+            self.t2m_metrics = None
+            self.t2m_mm_metric = None
+            return
+
         from src.models.evaluator.T2M import T2MEvaluator
         self.t2m_evaluator = T2MEvaluator(dataset_name, evaluator.T2M_dir)
         self.t2m_metrics = TM2TMetrics(diversity_times=300 if dataset_name == "hml3d" else 100,
@@ -136,9 +143,16 @@ class LightMotionGeneration(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         if self.trainer.sanity_checking:
             return
+        # evaluator 없으면 스킵
+        if self.t2m_evaluator is None:
+            return
         self.evaluate(batch, split='val', batch_idx=batch_idx)
 
     def on_validation_epoch_end(self):
+        # evaluator 없으면 스킵
+        if self.t2m_metrics is None:
+            return
+
         results = {}
         metric_output = self.t2m_metrics.compute(sanity_flag=self.trainer.sanity_checking)
         results.update({f"Metrics/{key}": value.item() for key, value in metric_output.items()})
@@ -149,9 +163,16 @@ class LightMotionGeneration(L.LightningModule):
             self.log_dict(results, sync_dist=True)
 
     def test_step(self, batch, batch_idx):
+        # evaluator 없으면 스킵
+        if self.t2m_evaluator is None:
+            return
         self.evaluate(batch, split="test")
 
     def on_test_epoch_end(self):
+        # evaluator 없으면 스킵
+        if self.t2m_metrics is None:
+            return
+
         results = {}
         if self.is_mm_metric:
             results.update(self.t2m_mm_metric.compute(sanity_flag=self.trainer.sanity_checking))

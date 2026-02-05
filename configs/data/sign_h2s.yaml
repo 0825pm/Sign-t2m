@@ -1,0 +1,33 @@
+_target_: src.data.sign_datamodule.SignDataModule
+
+# Data paths (절대경로)
+data_root: /home/user/Projects/research/SOKE/data/How2Sign
+csl_root: /home/user/Projects/research/SOKE/data/CSL-Daily
+phoenix_root: /home/user/Projects/research/SOKE/data/Phoenix_2014T
+
+# Dataset params
+dataset_name: how2sign_csl_phoenix
+nfeats: 120
+motion_dim: 120
+njoints: 55
+fps: 25
+
+# Sequence limits
+max_motion_length: 300
+min_motion_length: 40
+
+# DataLoader params
+batch_size: 64
+num_workers: 8
+pin_memory: true
+
+# Stage
+stage: t2m
+
+# Normalization (H2S/Phoenix용)
+mean_path: /home/user/Projects/research/SOKE/data/CSL-Daily/mean_120.pt
+std_path: /home/user/Projects/research/SOKE/data/CSL-Daily/std_120.pt
+
+# CSL 전용
+csl_mean_path: /home/user/Projects/research/SOKE/data/CSL-Daily/csl_mean_120.pt
+csl_std_path: /home/user/Projects/research/SOKE/data/CSL-Daily/csl_std_120.pt
