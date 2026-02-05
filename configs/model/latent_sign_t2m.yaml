@@ -1,0 +1,43 @@
+defaults:
+    - default
+    - text_encoder: clip
+    - noise_scheduler: DDPM_ori
+    - sample_scheduler: UniPC
+    - optimizer: adamw
+
+_target_: src.models.latent_sign_t2m.LatentSignT2M
+
+# VAE checkpoint (REQUIRED — set via CLI)
+vae_checkpoint: ""
+vae_config:
+  nfeats: 120
+  latent_dim: [1, 256]
+  num_layers: 4
+  num_groups: 16
+  d_state: 16
+  d_conv: 4
+  expand: 2
+  dropout: 0.1
+
+# Denoiser (single-token, self-attention based)
+denoiser:
+  latent_dim: 256
+  text_dim: 512
+  hidden_dim: 256
+  num_layers: 6
+  num_heads: 4
+  dropout: 0.1
+
+# Generation
+text_replace_prob: 0.1
+guidance_scale: 4.0
+step_num: 10
+dataset_name: ${data.dataset_name}
+
+evaluator: null
+save_every_n_epochs: 1e9
+
+ema:
+  use_ema: false
+  ema_decay: 0.99
+  ema_start: 1000

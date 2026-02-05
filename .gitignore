@@ -14,3 +14,5 @@ build/
 /run_cmd.sh
 *.nfs*
 !data/random_selected_data.npy
+vis_*/
+experiments/
