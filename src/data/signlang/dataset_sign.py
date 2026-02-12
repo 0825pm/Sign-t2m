@@ -11,7 +11,10 @@ from torch.utils.data import Dataset
 from copy import deepcopy
 from tqdm import tqdm
 
-from .load_data import load_h2s_sample, load_csl_sample, load_phoenix_sample
+from .load_data import (
+    load_h2s_sample, load_csl_sample, load_phoenix_sample,
+    load_h2s_sample_6d, load_csl_sample_6d, load_phoenix_sample_6d,
+)
 
 
 # Bad How2Sign samples to skip
@@ -47,7 +50,6 @@ class SignMotionDataset(Dataset):
         fps=25,
         csl_root=None,
         phoenix_root=None,
-        # CSL 전용 mean/std
         csl_mean=None,
         csl_std=None,
         **kwargs
@@ -90,7 +92,9 @@ class SignMotionDataset(Dataset):
         
         self._load_annotations()
         
-        print(f'Data loading done. All: {len(self.all_data)}, H2S: {self.h2s_len}, CSL: {self.csl_len}, Phoenix: {self.phoenix_len}')
+        mode_str = ' [6D mode]' if self.nfeats == 240 else ''
+        print(f'Data loading done. All: {len(self.all_data)}, '
+              f'H2S: {self.h2s_len}, CSL: {self.csl_len}, Phoenix: {self.phoenix_len}{mode_str}')
     
     def _get_mean_std_np(self, src):
         """데이터셋별 mean/std 반환"""
@@ -104,7 +108,8 @@ class SignMotionDataset(Dataset):
         
         # How2Sign
         if 'how2sign' in self.dataset_name and self.root_dir:
-            csv_path = os.path.join(self.root_dir, split, 're_aligned', f'how2sign_realigned_{split}_preprocessed_fps.csv')
+            csv_path = os.path.join(self.root_dir, split, 're_aligned',
+                                    f'how2sign_realigned_{split}_preprocessed_fps.csv')
             if not os.path.exists(csv_path):
                 csv_path = os.path.join(self.root_dir, split, 'preprocessed_fps.csv')
             
@@ -174,14 +179,31 @@ class SignMotionDataset(Dataset):
         src = sample['src']
         name = sample['name']
         
+        # 6D (nfeats=240) vs 기존 (nfeats=120) 분기
+        use_6d = (self.nfeats == 240)
+        orig_name = name  # load 실패 시 name 보존용
+        
         if src == 'how2sign':
-            clip_poses, text, name, _ = load_h2s_sample(sample, self.root_dir)
+            if use_6d:
+                clip_poses, text, name, _ = load_h2s_sample_6d(sample, self.root_dir)
+            else:
+                clip_poses, text, name, _ = load_h2s_sample(sample, self.root_dir)
         elif src == 'csl':
-            clip_poses, text, name, _ = load_csl_sample(sample, self.csl_root)
+            if use_6d:
+                clip_poses, text, name, _ = load_csl_sample_6d(sample, self.csl_root)
+            else:
+                clip_poses, text, name, _ = load_csl_sample(sample, self.csl_root)
         elif src == 'phoenix':
-            clip_poses, text, name, _ = load_phoenix_sample(sample, self.phoenix_root)
+            if use_6d:
+                clip_poses, text, name, _ = load_phoenix_sample_6d(sample, self.phoenix_root)
+            else:
+                clip_poses, text, name, _ = load_phoenix_sample(sample, self.phoenix_root)
         else:
             clip_poses, text = None, ""
+        
+        # load 실패 시 원래 name 복원
+        if name is None:
+            name = orig_name
         
         if clip_poses is None:
             clip_poses = np.zeros((self.min_motion_length, self.nfeats), dtype=np.float32)

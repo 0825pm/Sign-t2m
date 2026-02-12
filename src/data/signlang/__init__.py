@@ -12,14 +12,20 @@ from .load_data import (
     load_h2s_sample,
     load_csl_sample,
     load_phoenix_sample,
+    load_h2s_sample_6d,
+    load_csl_sample_6d,
+    load_phoenix_sample_6d,
 )
 
 __all__ = [
     'SignMotionDataset',
-    'SignText2MotionDataset', 
+    'SignText2MotionDataset',
     'SignText2MotionDatasetEval',
     'sign_collate',
     'load_h2s_sample',
     'load_csl_sample',
     'load_phoenix_sample',
+    'load_h2s_sample_6d',
+    'load_csl_sample_6d',
+    'load_phoenix_sample_6d',
 ]

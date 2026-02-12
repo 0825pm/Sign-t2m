@@ -20,6 +20,14 @@ except ImportError as e:
     HAS_SMPLX = False
     print(f"[feats2joints] Warning: human_models not available: {e}")
 
+# Import 6D→axis-angle conversion
+try:
+    from src.utils.rotation_utils import rot_6d_to_axis_angle
+    HAS_ROT_UTILS = True
+except ImportError:
+    HAS_ROT_UTILS = False
+    print("[feats2joints] Warning: rotation_utils not available, 240-dim may fall back to feats2joints_6d")
+
 
 # Default shape parameter (from SOKE)
 DEFAULT_SHAPE = torch.tensor([
@@ -30,12 +38,12 @@ DEFAULT_SHAPE = torch.tensor([
 
 def feats2joints_smplx(features, mean, std):
     """
-    Convert 120-dim SOKE features to 3D joints using SMPL-X.
+    Convert 120/240-dim SOKE features to 3D joints using SMPL-X.
     
     Args:
-        features: [B, T, 120] or [T, 120] normalized features
-        mean: [120] mean for denormalization
-        std: [120] std for denormalization
+        features: [B, T, 120] or [B, T, 240] or [T, D] normalized features
+        mean: [D] mean for denormalization
+        std: [D] std for denormalization
         
     Returns:
         vertices: [B, T, 10475, 3] or None
@@ -67,6 +75,20 @@ def feats2joints_smplx(features, mean, std):
     # Reshape for batch processing
     features_flat = features.reshape(B * T, D)
     batch_size = B * T
+    
+    # ---- 240-dim 6D → 120-dim axis-angle 변환 후 기존 로직 재사용 ----
+    if D == 240:
+        if not HAS_ROT_UTILS:
+            print("[feats2joints] Error: rotation_utils required for 240-dim")
+            joints = _approximate_joints(features)
+            if squeeze_output:
+                joints = joints.squeeze(0)
+            return None, joints
+        
+        motion_6d = features_flat.reshape(batch_size, 40, 6)
+        motion_aa = rot_6d_to_axis_angle(motion_6d)         # [B*T, 40, 3]
+        features_flat = motion_aa.reshape(batch_size, 120)
+        D = 120  # 이후 120-dim 로직으로 진행
     
     # Parse 120-dim features
     if D == 120:
@@ -181,3 +203,49 @@ class Feats2Joints(nn.Module):
     def forward(self, features):
         _, joints = feats2joints_smplx(features, self.mean, self.std)
         return joints
+
+    
+def feats2joints_6d(features_6d, mean_6d=None, std_6d=None):
+    """
+    Convert 240-dim 6D rotation features to 3D joints.
+
+    Flow: 6D (240) → denormalize → axis-angle (120) → feats2joints_smplx
+
+    Args:
+        features_6d: [B, T, 240] or [T, 240]  (normalized or raw)
+        mean_6d: [240] mean for denormalization (None = raw input)
+        std_6d:  [240] std for denormalization  (None = raw input)
+
+    Returns:
+        vertices, joints  (same as feats2joints_smplx)
+    """
+    from src.utils.rotation_utils import convert_240_to_120
+
+    squeeze = False
+    if len(features_6d.shape) == 2:
+        features_6d = features_6d.unsqueeze(0)
+        squeeze = True
+
+    device = features_6d.device
+    dtype = features_6d.dtype
+
+    # 1. Denormalize if mean/std provided
+    if mean_6d is not None and std_6d is not None:
+        mean_6d = mean_6d.to(device).to(dtype)
+        std_6d = std_6d.to(device).to(dtype)
+        features_6d = features_6d * std_6d + mean_6d
+
+    # 2. 6D → axis-angle
+    features_aa = convert_240_to_120(features_6d)  # [B, T, 120]
+
+    # 3. feats2joints_smplx with identity normalization (already raw)
+    zero_mean = torch.zeros(120, device=device, dtype=dtype)
+    one_std = torch.ones(120, device=device, dtype=dtype)
+    vertices, joints = feats2joints_smplx(features_aa, zero_mean, one_std)
+
+    if squeeze:
+        if vertices is not None:
+            vertices = vertices.squeeze(0)
+        joints = joints.squeeze(0)
+
+    return vertices, joints

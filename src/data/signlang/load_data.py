@@ -230,3 +230,75 @@ def load_phoenix_sample(ann, data_dir, need_pose=True, code_path=None, need_code
         clip_poses = np.zeros([len(frame_list), 120], dtype=np.float32)
     
     return clip_poses.astype(np.float32), clip_text, name, None
+
+
+# ============================================================
+# 6D npy 로딩 함수 (Step 7)
+# preprocess_6d.py로 생성된 240-dim npy를 직접 로드
+# pkl 파싱 불필요 → I/O 대폭 개선
+# ============================================================
+
+
+
+def load_phoenix_sample_6d(ann, data6d_dir, split):
+    """Load Phoenix-2014T 240-dim 6D npy
+    
+    Note: Phoenix name에 'train/video_name' 형태가 있을 수 있음
+          preprocess_6d.py에서 split prefix 제거 후 저장했으므로 여기서도 제거
+    """
+    name = ann['name']
+    text = ann.get('text', '')
+    
+    # split prefix 제거 (preprocess_6d.py와 동일 로직)
+    save_name = name.split('/')[-1] if '/' in name else name
+    npy_path = os.path.join(data6d_dir, split, f'{save_name}.npy')
+    
+    if not os.path.exists(npy_path):
+        return None, None, None, None
+    
+    motion_240 = np.load(npy_path)  # [T, 240]
+    return motion_240.astype(np.float32), text, name, None
+
+
+# ============================================================
+# 6D rotation npy 직접 로딩 (pkl 파싱 불필요)
+# v2 디렉토리 구조:
+#   How2Sign:  data6d/How2Sign/{split}/poses/{name}.npy
+#   CSL-Daily: data6d/CSL-Daily/poses/{name}.npy
+#   Phoenix:   data6d/Phoenix_2014T/{split}/{name}.npy (val->dev)
+# ============================================================
+
+def load_h2s_sample_6d(ann, data_dir, **kwargs):
+    """How2Sign 6D npy 로드 [T, 240]"""
+    name = ann['name']
+    split = ann.get('split', 'train')
+    npy_path = os.path.join(data_dir, split, 'poses', f'{name}.npy')
+    if not os.path.exists(npy_path):
+        return None, None, None, None
+    motion = np.load(npy_path)
+    return motion.astype(np.float32), ann.get('text', ''), name, None
+
+
+def load_csl_sample_6d(ann, data_dir, **kwargs):
+    """CSL-Daily 6D npy 로드 [T, 240]"""
+    name = ann['name']
+    npy_path = os.path.join(data_dir, 'poses', f'{name}.npy')
+    if not os.path.exists(npy_path):
+        return None, None, None, None
+    motion = np.load(npy_path)
+    return motion.astype(np.float32), ann.get('text', ''), name, None
+
+
+def load_phoenix_sample_6d(ann, data_dir, **kwargs):
+    """Phoenix-2014T 6D npy 로드 [T, 240]"""
+    name = ann['name']
+    split = ann.get('split', 'train')
+    if split == 'val':
+        split = 'dev'
+    npy_path = os.path.join(data_dir, split, f'{name}.npy')
+    if not os.path.exists(npy_path):
+        npy_path = os.path.join(data_dir, f'{name}.npy')
+    if not os.path.exists(npy_path):
+        return None, None, None, None
+    motion = np.load(npy_path)
+    return motion.astype(np.float32), ann.get('text', ''), name, None
