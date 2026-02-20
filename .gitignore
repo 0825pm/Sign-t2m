@@ -16,3 +16,4 @@ build/
 !data/random_selected_data.npy
 vis_*/
 experiments/
+*.png
