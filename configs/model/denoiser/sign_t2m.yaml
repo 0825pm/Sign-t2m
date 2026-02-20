@@ -1,0 +1,19 @@
+_target_: src.models.nets.sign_denoiser.SignDenoiser
+motion_dim: ${data.motion_dim}
+max_motion_len: 401
+text_dim: 512
+pos_emb: "cos"
+stage_dim: "256*4"
+num_groups: 16
+patch_size: 8
+
+# Mamba SSM config
+rms_norm: false
+fused_add_norm: true
+ssm_cfg:
+  d_state: 16
+  d_conv: 4
+  expand: 2
+
+# Part-aware disabled (flat architecture, proven to work)
+part_aware: false

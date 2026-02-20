@@ -15,6 +15,7 @@ from .load_data import (
     load_h2s_sample_6d,
     load_csl_sample_6d,
     load_phoenix_sample_6d,
+    load_npy_sample,
 )
 
 __all__ = [
@@ -28,4 +29,5 @@ __all__ = [
     'load_h2s_sample_6d',
     'load_csl_sample_6d',
     'load_phoenix_sample_6d',
+    'load_npy_sample',
 ]

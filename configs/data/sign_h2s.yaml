@@ -13,8 +13,8 @@ njoints: 55
 fps: 25
 
 # Sequence limits
-max_motion_length: 300
-min_motion_length: 40
+max_motion_length: 400
+min_motion_length: 20
 
 # DataLoader params
 batch_size: 64

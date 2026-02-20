@@ -22,7 +22,7 @@ except ImportError as e:
 
 # Import 6D→axis-angle conversion
 try:
-    from src.utils.rotation_utils import rot_6d_to_axis_angle
+    from src.utils.rotation_utils import rotation_6d_to_axis_angle as rot_6d_to_axis_angle
     HAS_ROT_UTILS = True
 except ImportError:
     HAS_ROT_UTILS = False

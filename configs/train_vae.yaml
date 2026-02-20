@@ -1,11 +1,10 @@
 # @package _global_
 
-# specify here default configuration
-# order of defaults determines the order in which configs override each other
+# VAE Stage 1 Training: motion-only, no text encoder needed
 defaults:
-  - data: sign_h2s
-  - model: sign_t2m
-  - callbacks: default
+  - data: sign_h2s_528d
+  - model: sign_vae
+  - callbacks: vae
   - logger: tensorboard
   - trainer: ddp2
   - paths: default
@@ -21,16 +20,17 @@ defaults:
 
 
 trainer:
-  check_val_every_n_epoch: 1
-  precision: 32
+  max_epochs: 2000
+  check_val_every_n_epoch: 5
+  precision: 16-mixed
 
 logger:
   wandb:
-    project: "sign-t2m"
+    project: "sign-vae"
 
-task_name: "sign-t2m"
+task_name: "sign-vae"
 
-tags: ["dev"]
+tags: ["vae", "stage1"]
 
 train: true
 test: false

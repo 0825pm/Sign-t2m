@@ -33,6 +33,14 @@ NEW_KEYS = [
 ]
 
 
+def _subsample(input_list, count):
+    """Uniform subsample list to target count (from salad)"""
+    if count >= len(input_list):
+        return input_list
+    ss = float(len(input_list)) / count
+    return [input_list[int(math.floor(i * ss))] for i in range(count)]
+
+
 def extract_frame_num(filename):
     """파일명에서 프레임 번호 추출 (숫자 기반 정렬용)
     
@@ -110,10 +118,14 @@ def convert_179_to_120(clip_poses):
 
 
 def load_h2s_sample(ann, data_dir, need_pose=True, code_path=None, need_code=False):
-    """Load How2Sign sample"""
+    """Load How2Sign sample
+    
+    FPS normalization: fps > 24 → subsample to 24fps (from salad)
+    """
     clip_text = ann['text']
     name = ann['name']
     split = ann.get('split', 'train')
+    fps = ann.get('fps', 25)
     
     pose_dir = os.path.join(data_dir, split, 'poses', name)
     if not os.path.exists(pose_dir):
@@ -126,6 +138,12 @@ def load_h2s_sample(ann, data_dir, need_pose=True, code_path=None, need_code=Fal
         [f for f in os.listdir(pose_dir) if f.endswith('.pkl')],
         key=extract_frame_num
     )
+    
+    # FPS 정규화: fps > 24이면 24fps로 서브샘플링
+    if fps > 24:
+        target_count = int(24 * len(pkl_files) / fps)
+        pkl_files = _subsample(pkl_files, target_count)
+    
     if len(pkl_files) < 4:
         return None, None, None, None
     
@@ -302,3 +320,34 @@ def load_phoenix_sample_6d(ann, data_dir, **kwargs):
         return None, None, None, None
     motion = np.load(npy_path)
     return motion.astype(np.float32), ann.get('text', ''), name, None
+
+
+# ============================================================
+# 범용 npy 로딩 (528D 등 임의 차원)
+# 디렉토리 구조:
+#   How2Sign:  {data_dir}/{split}/poses/{name}.npy
+#   CSL-Daily: {data_dir}/poses/{name}.npy
+#   Phoenix:   {data_dir}/{split}/{name}.npy
+# ============================================================
+
+def load_npy_sample(ann, data_dir, dataset_type='how2sign'):
+    """범용 npy 로드 — dataset_type에 따라 경로 구조 결정"""
+    name = ann['name']
+    text = ann.get('text', '')
+    split = ann.get('split', 'train')
+    save_name = name.split('/')[-1] if '/' in name else name
+
+    if dataset_type == 'how2sign':
+        npy_path = os.path.join(data_dir, split, 'poses', f'{save_name}.npy')
+    elif dataset_type == 'csl':
+        npy_path = os.path.join(data_dir, 'poses', f'{save_name}.npy')
+    elif dataset_type == 'phoenix':
+        npy_path = os.path.join(data_dir, split, f'{save_name}.npy')
+    else:
+        npy_path = os.path.join(data_dir, f'{save_name}.npy')
+
+    if not os.path.exists(npy_path):
+        return None, None, None, None
+
+    motion = np.load(npy_path)
+    return motion.astype(np.float32), text, name, None

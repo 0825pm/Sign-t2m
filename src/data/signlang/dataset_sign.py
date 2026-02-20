@@ -14,6 +14,7 @@ from tqdm import tqdm
 from .load_data import (
     load_h2s_sample, load_csl_sample, load_phoenix_sample,
     load_h2s_sample_6d, load_csl_sample_6d, load_phoenix_sample_6d,
+    load_npy_sample,
 )
 
 
@@ -50,6 +51,9 @@ class SignMotionDataset(Dataset):
         fps=25,
         csl_root=None,
         phoenix_root=None,
+        npy_root=None,
+        csl_npy_root=None,
+        phoenix_npy_root=None,
         csl_mean=None,
         csl_std=None,
         **kwargs
@@ -58,6 +62,9 @@ class SignMotionDataset(Dataset):
         self.root_dir = data_root
         self.csl_root = csl_root
         self.phoenix_root = phoenix_root
+        self.npy_root = npy_root                  # 528d npy 경로 (None이면 data_root 사용)
+        self.csl_npy_root = csl_npy_root          # 528d CSL npy
+        self.phoenix_npy_root = phoenix_npy_root  # 528d Phoenix npy
         self.split = split
         
         self.unit_length = unit_length
@@ -179,11 +186,25 @@ class SignMotionDataset(Dataset):
         src = sample['src']
         name = sample['name']
         
-        # 6D (nfeats=240) vs 기존 (nfeats=120) 분기
+        # 6D (nfeats=240) vs 528D (nfeats=528) vs 기존 (nfeats=120) 분기
         use_6d = (self.nfeats == 240)
+        use_528d = (self.nfeats == 528)
         orig_name = name  # load 실패 시 name 보존용
         
-        if src == 'how2sign':
+        if use_528d:
+            # 528D: npy_root에서 로드 (annotations은 기존 경로)
+            if src == 'how2sign':
+                clip_poses, text, name, _ = load_npy_sample(
+                    sample, self.npy_root or self.root_dir, 'how2sign')
+            elif src == 'csl':
+                clip_poses, text, name, _ = load_npy_sample(
+                    sample, self.csl_npy_root or self.csl_root, 'csl')
+            elif src == 'phoenix':
+                clip_poses, text, name, _ = load_npy_sample(
+                    sample, self.phoenix_npy_root or self.phoenix_root, 'phoenix')
+            else:
+                clip_poses, text = None, ""
+        elif src == 'how2sign':
             if use_6d:
                 clip_poses, text, name, _ = load_h2s_sample_6d(sample, self.root_dir)
             else:

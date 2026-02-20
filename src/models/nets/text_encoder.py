@@ -50,18 +50,32 @@ class CLIP(torch.nn.Module):
         return self.clip_model.text_projection.dtype
 
     def forward(self, text, device, **kwargs):
-        text = clip.tokenize(text, truncate=True).to(device)
-        x = self.clip_model.token_embedding(text).type(self.dtype)  # [batch_size, n_ctx, d_model]
+        # Identify which samples are unconditional (empty string)
+        is_null = [t == "" for t in text]
+        
+        # Replace empty strings with dummy text for CLIP tokenization (avoid edge cases)
+        text_for_clip = [t if t != "" else "a" for t in text]
+        
+        tokens = clip.tokenize(text_for_clip, truncate=True).to(device)
+        x = self.clip_model.token_embedding(tokens).type(self.dtype)
 
         x = x + self.clip_model.positional_embedding.type(self.dtype)
         x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.clip_model.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
         x = self.clip_model.ln_final(x).type(self.dtype)
-        # x.shape = [batch_size, n_ctx, transformer.yaml.yaml.width]
-        # take features from the eot embedding (eot_token is the highest number in each sequence)
-        text_embed = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.clip_model.text_projection
-        mask = lengths_to_mask(text.argmax(dim=-1), device)
+
+        text_embed = x[torch.arange(x.shape[0]), tokens.argmax(dim=-1)] @ self.clip_model.text_projection
+        mask = lengths_to_mask(tokens.argmax(dim=-1), device)
         if mask.shape[1] < x.shape[1]:
             x = x[:, :mask.size(1)]
+
+        # Zero out unconditional samples — critical for CFG
+        for i, null in enumerate(is_null):
+            if null:
+                text_embed[i] = 0.0
+                x[i] = 0.0
+                mask[i] = False
+                mask[i, 0] = True  # keep at least 1 token for attention
+
         return {"text_emb": text_embed, "hidden": x, "mask": mask}

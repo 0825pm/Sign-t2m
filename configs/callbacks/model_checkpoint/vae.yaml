@@ -1,0 +1,10 @@
+_target_: lightning.pytorch.callbacks.ModelCheckpoint
+dirpath: ${paths.output_dir}/checkpoints
+filename: "vae-epoch-{epoch:03d}-val_recon-{val/recon:.4f}"
+monitor: "val/recon"
+verbose: False
+save_last: true
+save_top_k: 3
+mode: "min"
+auto_insert_metric_name: True
+save_weights_only: False

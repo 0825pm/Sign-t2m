@@ -1,0 +1,39 @@
+_target_: src.data.sign_datamodule.SignDataModule
+
+# Annotation paths (원본 — annotations만 여기서 로드)
+data_root: /home/user/Projects/research/SOKE/data/How2Sign
+csl_root: /home/user/Projects/research/SOKE/data/CSL-Daily
+phoenix_root: /home/user/Projects/research/SOKE/data/Phoenix_2014T
+
+# 528D npy paths (preprocess_480d.py 출력)
+npy_root: /home/user/Projects/research/SOKE/data/How2Sign_528d
+csl_npy_root: /home/user/Projects/research/SOKE/data/CSL-Daily_528d
+phoenix_npy_root: /home/user/Projects/research/SOKE/data/Phoenix_528d
+
+# Dataset params
+dataset_name: how2sign_csl_phoenix
+# dataset_name: how2sign
+nfeats: 528
+motion_dim: 528
+njoints: 44  # 44 joints: 4 spine + 10 upper body + 15 lhand + 15 rhand
+fps: 25
+
+# Sequence limits
+max_motion_length: 400
+min_motion_length: 20
+
+# DataLoader params
+batch_size: 64
+num_workers: 8
+pin_memory: true
+
+# Stage
+stage: t2m
+
+# Normalization — preprocess_480d.py --compute_stats 출력
+mean_path: /home/user/Projects/research/SOKE/data/How2Sign_528d/mean_528.pt
+std_path: /home/user/Projects/research/SOKE/data/How2Sign_528d/std_528.pt
+
+# CSL 전용 (별도 계산 시 여기 수정, 아니면 통합 stats)
+csl_mean_path: /home/user/Projects/research/SOKE/data/CSL-Daily_528d/mean_528.pt
+csl_std_path: /home/user/Projects/research/SOKE/data/CSL-Daily_528d/std_528.pt

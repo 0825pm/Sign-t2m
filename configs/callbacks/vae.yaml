@@ -1,6 +1,5 @@
 defaults:
-  - model_checkpoint: default.yaml
-#  - early_stopping.yaml
+  - model_checkpoint: vae.yaml
   - model_summary.yaml
   - rich_progress_bar.yaml
   - _self_

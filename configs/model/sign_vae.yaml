@@ -1,0 +1,33 @@
+defaults:
+    - default
+    - optimizer: adamw
+    - lr_scheduler: cosine
+
+_target_: src.models.sign_vae.SignVAE
+
+# VAE architecture (MLD-style SkipTransformer)
+vae:
+  _target_: src.models.nets.motion_vae.MldVae
+  nfeats: ${data.nfeats}
+  latent_dim: [1, 256]    # 1 token × 256D latent
+  ff_size: 1024
+  num_layers: 9           # must be odd (skip connection)
+  num_heads: 4
+  dropout: 0.1
+  activation: gelu
+
+# Loss weights (MotionGPT3/MLD defaults)
+lambda_recon: 1.0
+lambda_velocity: 0.5
+lambda_kl: 1.0e-5
+recon_loss_type: l1_smooth
+
+# Part weighting
+hand_loss_weight: 2.0
+pos_weight: 1.0       # positions (0:132) — 핵심
+vel_weight: 0.5       # velocities (132:264)
+rot_weight: 0.2       # 6D rotations (264:528) — 낮추어 overfitting 방지
+
+# Checkpoint
+ckpt_path: ${paths.output_dir}/checkpoints
+save_every_n_epochs: 100

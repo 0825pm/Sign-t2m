@@ -25,6 +25,10 @@ class SignDataModule(LightningDataModule):
         data_root: str,
         csl_root: str = None,
         phoenix_root: str = None,
+        # 528D npy 경로 (None이면 기존 data_root 사용)
+        npy_root: str = None,
+        csl_npy_root: str = None,
+        phoenix_npy_root: str = None,
         mean_path: str = None,
         std_path: str = None,
         # CSL 전용 mean/std
@@ -36,14 +40,14 @@ class SignDataModule(LightningDataModule):
         num_workers: int = 8,
         pin_memory: bool = False,
         njoints: int = 55,
-        nfeats: int = 133,
+        nfeats: int = 120,
         fps: int = 25,
         max_motion_length: int = 300,
         min_motion_length: int = 40,
         unit_length: int = 4,
         dataset_name: str = 'how2sign_csl_phoenix',
         stage: str = 'lm',
-        motion_dim: int = 133,
+        motion_dim: int = 120,
         **kwargs
     ):
         super().__init__()
@@ -52,6 +56,9 @@ class SignDataModule(LightningDataModule):
         self.data_root = data_root
         self.csl_root = csl_root
         self.phoenix_root = phoenix_root
+        self.npy_root = npy_root
+        self.csl_npy_root = csl_npy_root
+        self.phoenix_npy_root = phoenix_npy_root
         self.njoints = njoints
         self.nfeats = nfeats
         self.name = dataset_name
@@ -113,6 +120,9 @@ class SignDataModule(LightningDataModule):
             'data_root': self.data_root,
             'csl_root': self.csl_root,
             'phoenix_root': self.phoenix_root,
+            'npy_root': self.npy_root,
+            'csl_npy_root': self.csl_npy_root,
+            'phoenix_npy_root': self.phoenix_npy_root,
             'dataset_name': self.name,
             'nfeats': self.nfeats,
             'max_motion_length': self.hparams.max_motion_length,

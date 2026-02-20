@@ -1,0 +1,29 @@
+defaults:
+    - default
+    - text_encoder: clip
+    - denoiser: sign_t2m
+    - optimizer: adamw
+    - noise_scheduler: DDPM_ori
+    - sample_scheduler: UniPC
+    - lr_scheduler: cosine
+
+_target_: src.models.sign_t2m.SignMotionGeneration
+
+text_replace_prob: 0.5
+guidance_scale: 7.5 
+dataset_name: ${data.dataset_name}
+
+evaluator: null
+ckpt_path: ${paths.output_dir}/checkpoints
+save_every_n_epochs: 1e9
+
+step_num: 10
+
+# Part-weighted loss (sign language: emphasize hands)
+hand_loss_weight: 2.0
+vel_loss_weight: 0.5
+
+ema:
+  use_ema: true
+  ema_decay: 0.999
+  ema_start: 1000
