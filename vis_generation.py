@@ -1,28 +1,24 @@
 """
-vis_generation.py — Sign-t2m Text→Motion 생성 시각화
+vis_generation_528d.py — Sign-t2m 528D Text→Motion 생성 시각화
 
-학습된 체크포인트에서 text → motion 생성 후 skeleton 영상 저장
-GT 비교 모드 / 자유 텍스트 생성 모드 지원
+528D 모델 체크포인트에서 text → motion 생성 후 skeleton 영상 저장
+528D = positions(132) + velocities(132) + 6D_rot(264), 44 joints
+positions를 직접 사용하므로 FK 불필요
 
 Usage:
     cd ~/Projects/research/Sign-t2m
 
     # GT 비교 (val set에서 N개 샘플 → GT vs Generated)
-    python vis_generation.py \
+    python vis_generation_528d.py \
         --ckpt logs/.../checkpoints/last.ckpt \
         --mode val --num_samples 5
 
     # 자유 텍스트 생성
-    python vis_generation.py \
+    python vis_generation_528d.py \
         --ckpt logs/.../checkpoints/last.ckpt \
         --mode text \
         --texts "a person waves hello" "pointing to the right" \
         --lengths 80 60
-
-    # guidance scale / step 조정
-    python vis_generation.py \
-        --ckpt logs/.../checkpoints/last.ckpt \
-        --mode val --guidance_scale 7.5 --step_num 20
 """
 
 import os
@@ -42,44 +38,42 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 # =============================================================================
-# Constants
+# Constants — 44-joint skeleton (528D)
 # =============================================================================
-SMPLX_UPPER_BODY = [0, 3, 6, 9, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
-SMPLX_LHAND = list(range(25, 40))
-SMPLX_RHAND = list(range(40, 55))
-SMPLX_VALID = SMPLX_UPPER_BODY + SMPLX_LHAND + SMPLX_RHAND
+N_JOINTS = 44
+NFEATS = 528  # pos(132) + vel(132) + 6d(264)
+
+# Joint layout:
+#   0-3:   Pelvis, Spine1, Spine2, Spine3
+#   4-13:  Neck, L_Collar, R_Collar, Head, L_Shoulder, R_Shoulder, L_Elbow, R_Elbow, L_Wrist, R_Wrist
+#   14-28: left hand (15)
+#   29-43: right hand (15)
+
+SPINE_CONNECTIONS = [(0,1), (1,2), (2,3), (3,4)]
+BODY_CONNECTIONS = [
+    (4,7), (4,5), (4,6), (5,8), (6,9),
+    (8,10), (9,11), (10,12), (11,13),
+]
+
+def _hand_conns(wrist, offset):
+    c = []
+    for f in range(5):
+        b = offset + f*3
+        c += [(wrist, b), (b, b+1), (b+1, b+2)]
+    return c
+
+LHAND_CONNECTIONS = _hand_conns(12, 14)
+RHAND_CONNECTIONS = _hand_conns(13, 29)
+ALL_CONNECTIONS = SPINE_CONNECTIONS + BODY_CONNECTIONS + LHAND_CONNECTIONS + RHAND_CONNECTIONS
+
+BODY_INDICES = list(range(14))
+LHAND_INDICES = list(range(14, 29))
+RHAND_INDICES = list(range(29, 44))
 
 
 # =============================================================================
-# Skeleton Visualization
+# Skeleton Visualization (44-joint)
 # =============================================================================
-
-def get_connections(num_joints):
-    upper_body = [
-        (0, 3), (3, 6), (6, 9), (9, 12), (12, 15),
-        (9, 13), (13, 16), (16, 18), (18, 20),
-        (9, 14), (14, 17), (17, 19), (19, 21),
-    ]
-    hand_connections = []
-    if num_joints >= 55:
-        for finger in range(5):
-            base = 25 + finger * 3
-            if base + 2 < num_joints:
-                hand_connections.extend([(20, base), (base, base+1), (base+1, base+2)])
-        for finger in range(5):
-            base = 40 + finger * 3
-            if base + 2 < num_joints:
-                hand_connections.extend([(21, base), (base, base+1), (base+1, base+2)])
-    return [(i, j) for i, j in upper_body + hand_connections if i < num_joints and j < num_joints]
-
-
-def normalize_to_root(joints, root_idx=9):
-    if len(joints.shape) == 3:
-        root = joints[:, root_idx:root_idx+1, :]
-    else:
-        root = joints[root_idx:root_idx+1, :]
-    return joints - root
-
 
 def _setup_skeleton_ax(ax, label, color, x_lim, y_lim):
     ax.set_title(label, fontsize=12, fontweight='bold', color=color)
@@ -89,60 +83,74 @@ def _setup_skeleton_ax(ax, label, color, x_lim, y_lim):
     ax.axis('off')
 
 
-def _build_skeleton_elements(ax, J, connections, colors):
-    ub_idx = [i for i in SMPLX_UPPER_BODY if i < J]
+def _get_viewport(data, viewport):
+    """data: [T, 44, 3]"""
+    if viewport > 0:
+        return (-viewport, viewport), (-viewport, viewport)
+    pts = data.reshape(-1, 3)
+    margin = 0.15
+    xr = pts[:, 0].max() - pts[:, 0].min()
+    yr = pts[:, 1].max() - pts[:, 1].min()
+    vp = max(xr, yr) / 2 + margin
+    vp = max(vp, 0.3)
+    return (-vp, vp), (-vp, vp)
+
+
+def _build_skeleton_elements(ax, colors):
     lines = []
-    for (i, j) in connections:
-        if i >= 40 or j >= 40:
-            c, lw = colors['rhand'], 1.0
-        elif i >= 25 or j >= 25:
-            c, lw = colors['lhand'], 1.0
+    for (i, j) in ALL_CONNECTIONS:
+        if i in LHAND_INDICES or j in LHAND_INDICES:
+            c, lw = colors['lhand'], 0.8
+        elif i in RHAND_INDICES or j in RHAND_INDICES:
+            c, lw = colors['rhand'], 0.8
+        elif (i, j) in SPINE_CONNECTIONS:
+            c, lw = 'purple', 2.5
         else:
-            c, lw = colors['body'], 1.5
+            c, lw = colors['body'], 2.0
         line, = ax.plot([], [], color=c, linewidth=lw, alpha=0.8)
         lines.append((line, i, j))
-    bs = ax.scatter([], [], c=colors['body'], s=10, zorder=5)
-    ls = ax.scatter([], [], c=colors['lhand'], s=5, zorder=5)
-    rs = ax.scatter([], [], c=colors['rhand'], s=5, zorder=5)
-    return lines, bs, ls, rs, ub_idx
+    spine_sc = ax.scatter([], [], c='purple', s=20, zorder=5)
+    body_sc = ax.scatter([], [], c=colors['body'], s=15, zorder=5)
+    lhand_sc = ax.scatter([], [], c=colors['lhand'], s=5, zorder=5)
+    rhand_sc = ax.scatter([], [], c=colors['rhand'], s=5, zorder=5)
+    return lines, spine_sc, body_sc, lhand_sc, rhand_sc
+
+
+def _update_skeleton(data, f, lines, spine_sc, body_sc, lhand_sc, rhand_sc):
+    x, y = data[f, :, 0], -data[f, :, 1]
+    for (line, i, j) in lines:
+        line.set_data([x[i], x[j]], [y[i], y[j]])
+    spine_sc.set_offsets(np.c_[x[:4], y[:4]])
+    body_sc.set_offsets(np.c_[x[4:14], y[4:14]])
+    lhand_sc.set_offsets(np.c_[x[14:29], y[14:29]])
+    rhand_sc.set_offsets(np.c_[x[29:44], y[29:44]])
+
+
+def _center_at_spine3(joints):
+    """Center at Spine3 (idx 3)"""
+    return joints - joints[:, 3:4, :]
 
 
 def save_comparison_video(left_joints, right_joints, save_path,
                           title='', fps=25, viewport=0.5,
                           left_label='GT', right_label='Generated'):
-    """Side-by-side skeleton video"""
     T = min(left_joints.shape[0], right_joints.shape[0])
-    J = min(left_joints.shape[1], right_joints.shape[1])
+    left = _center_at_spine3(left_joints[:T].copy())
+    right = _center_at_spine3(right_joints[:T].copy())
 
-    root_idx = 9 if J > 21 else 0
-    left = normalize_to_root(left_joints[:T, :J].copy(), root_idx)
-    right = normalize_to_root(right_joints[:T, :J].copy(), root_idx)
-
-    if viewport > 0:
-        x_lim = (-viewport, viewport)
-        y_lim = (-viewport, viewport)
-    else:
-        valid_idx = [i for i in SMPLX_VALID if i < J]
-        all_data = np.concatenate([left[:, valid_idx], right[:, valid_idx]], axis=0)
-        all_x, all_y = all_data[:, :, 0].flatten(), all_data[:, :, 1].flatten()
-        max_range = max(all_x.max() - all_x.min(), all_y.max() - all_y.min(), 0.1) * 1.2
-        x_mid, y_mid = (all_x.max() + all_x.min()) / 2, (all_y.max() + all_y.min()) / 2
-        x_lim = (x_mid - max_range/2, x_mid + max_range/2)
-        y_lim = (y_mid - max_range/2, y_mid + max_range/2)
+    all_data = np.concatenate([left, right], axis=0)
+    # 각각 독립 viewport — Generated 폭발해도 GT 정상 표시
+    x_lim_l, y_lim_l = _get_viewport(left, viewport)
+    x_lim_r, y_lim_r = _get_viewport(right, viewport)
 
     fig, (ax_l, ax_r) = plt.subplots(1, 2, figsize=(12, 6))
     fig.suptitle(title, fontsize=10)
+    _setup_skeleton_ax(ax_l, left_label, 'blue', x_lim_l, y_lim_l)
+    _setup_skeleton_ax(ax_r, right_label, 'red', x_lim_r, y_lim_r)
 
-    _setup_skeleton_ax(ax_l, left_label, 'blue', x_lim, y_lim)
-    _setup_skeleton_ax(ax_r, right_label, 'red', x_lim, y_lim)
-
-    connections = get_connections(J)
     colors = {'body': 'blue', 'lhand': 'red', 'rhand': 'green'}
-
-    elements = []
-    for ax, data in [(ax_l, left), (ax_r, right)]:
-        lines, bs, ls, rs, ub_idx = _build_skeleton_elements(ax, J, connections, colors)
-        elements.append((lines, bs, ls, rs, ub_idx, data))
+    el_l = _build_skeleton_elements(ax_l, colors)
+    el_r = _build_skeleton_elements(ax_r, colors)
 
     frame_text = fig.text(0.5, 0.02, '', ha='center', fontsize=9, color='gray')
     plt.tight_layout(rect=[0, 0.04, 1, 0.93])
@@ -150,16 +158,8 @@ def save_comparison_video(left_joints, right_joints, save_path,
     def update(frame):
         f = min(frame, T - 1)
         frame_text.set_text(f'Frame {f}/{T-1}')
-        for (lines, bs, ls, rs, ub_idx, data) in elements:
-            fd = data[f]
-            x, y = fd[:, 0], fd[:, 1]
-            for (line, i, j) in lines:
-                line.set_data([x[i], x[j]], [y[i], y[j]])
-            bs.set_offsets(np.c_[x[ub_idx], y[ub_idx]])
-            if J > 25:
-                ls.set_offsets(np.c_[x[25:40], y[25:40]])
-            if J > 40:
-                rs.set_offsets(np.c_[x[40:55], y[40:55]])
+        _update_skeleton(left, f, *el_l)
+        _update_skeleton(right, f, *el_r)
         return []
 
     anim = FuncAnimation(fig, update, frames=T, interval=1000/fps, blit=False)
@@ -171,30 +171,16 @@ def save_comparison_video(left_joints, right_joints, save_path,
 
 
 def save_single_video(joints, save_path, title='', fps=25, viewport=0.5):
-    """Single skeleton video (generation only, no GT)"""
-    T, J, _ = joints.shape
-    root_idx = 9 if J > 21 else 0
-    data = normalize_to_root(joints.copy(), root_idx)
-
-    if viewport > 0:
-        x_lim = (-viewport, viewport)
-        y_lim = (-viewport, viewport)
-    else:
-        valid_idx = [i for i in SMPLX_VALID if i < J]
-        d = data[:, valid_idx]
-        all_x, all_y = d[:, :, 0].flatten(), d[:, :, 1].flatten()
-        max_range = max(all_x.max() - all_x.min(), all_y.max() - all_y.min(), 0.1) * 1.2
-        x_mid, y_mid = (all_x.max() + all_x.min()) / 2, (all_y.max() + all_y.min()) / 2
-        x_lim = (x_mid - max_range/2, x_mid + max_range/2)
-        y_lim = (y_mid - max_range/2, y_mid + max_range/2)
+    T = joints.shape[0]
+    data = _center_at_spine3(joints.copy())
+    x_lim, y_lim = _get_viewport(data, viewport)
 
     fig, ax = plt.subplots(1, 1, figsize=(6, 6))
     fig.suptitle(title, fontsize=10)
     _setup_skeleton_ax(ax, 'Generated', 'red', x_lim, y_lim)
 
-    connections = get_connections(J)
     colors = {'body': 'blue', 'lhand': 'red', 'rhand': 'green'}
-    lines, bs, ls, rs, ub_idx = _build_skeleton_elements(ax, J, connections, colors)
+    el = _build_skeleton_elements(ax, colors)
 
     frame_text = fig.text(0.5, 0.02, '', ha='center', fontsize=9, color='gray')
     plt.tight_layout(rect=[0, 0.04, 1, 0.93])
@@ -202,15 +188,7 @@ def save_single_video(joints, save_path, title='', fps=25, viewport=0.5):
     def update(frame):
         f = min(frame, T - 1)
         frame_text.set_text(f'Frame {f}/{T-1}')
-        fd = data[f]
-        x, y = fd[:, 0], fd[:, 1]
-        for (line, i, j) in lines:
-            line.set_data([x[i], x[j]], [y[i], y[j]])
-        bs.set_offsets(np.c_[x[ub_idx], y[ub_idx]])
-        if J > 25:
-            ls.set_offsets(np.c_[x[25:40], y[25:40]])
-        if J > 40:
-            rs.set_offsets(np.c_[x[40:55], y[40:55]])
+        _update_skeleton(data, f, *el)
         return []
 
     anim = FuncAnimation(fig, update, frames=T, interval=1000/fps, blit=False)
@@ -222,33 +200,14 @@ def save_single_video(joints, save_path, title='', fps=25, viewport=0.5):
 
 
 # =============================================================================
-# Feature → Joint (approximate, no SMPL-X needed)
+# 528D Feature → 44 Joints (직접 추출, FK 불필요!)
 # =============================================================================
 
-def feats_to_joints(features_np):
-    """120D axis-angle → approximate 55-joint positions"""
-    T, D = features_np.shape
-    joints = np.zeros((T, 55, 3), dtype=np.float32)
-    if D >= 120:
-        joints[:, 12:22, :] = features_np[:, 0:30].reshape(T, 10, 3)
-        joints[:, 25:40, :] = features_np[:, 30:75].reshape(T, 15, 3)
-        joints[:, 40:55, :] = features_np[:, 75:120].reshape(T, 15, 3)
-    return joints
-
-
-def feats_to_joints_smplx(features_norm, mean, std, device='cuda:0'):
-    """120D normalized → SMPL-X FK → joints (accurate)"""
-    try:
-        from src.utils.feats2joints import feats2joints_smplx
-        t = torch.from_numpy(features_norm).float().unsqueeze(0).to(device)
-        m = mean.float().to(device)
-        s = std.float().to(device)
-        _, joints = feats2joints_smplx(t, m, s)
-        return joints.squeeze(0).cpu().numpy()
-    except Exception as e:
-        print(f"  SMPL-X FK failed ({e}), using approximate")
-        raw = features_norm * (std.numpy() + 1e-10) + mean.numpy()
-        return feats_to_joints(raw)
+def feats_to_joints(features_raw):
+    """528D → 44-joint positions (처음 132D 추출)"""
+    T = features_raw.shape[0]
+    positions = features_raw[:, :132].reshape(T, 44, 3)
+    return positions
 
 
 # =============================================================================
@@ -269,15 +228,25 @@ def load_model(ckpt_path, device, guidance_scale=None, step_num=None):
     ckpt = torch.load(ckpt_path, map_location='cpu')
     hparams = ckpt.get('hyper_parameters', {})
 
+    # Auto-detect prediction_type from checkpoint
+    ns_config = hparams.get('noise_scheduler', None)
+    if ns_config is not None and hasattr(ns_config, 'config'):
+        pred_type = ns_config.config.get('prediction_type', 'epsilon')
+    elif ns_config is not None and hasattr(ns_config, 'prediction_type'):
+        pred_type = ns_config.prediction_type
+    else:
+        pred_type = 'epsilon'
+    print(f"  prediction_type from checkpoint: '{pred_type}'")
+
     # Build components
     text_encoder = CLIP(freeze_lm=True)
 
     denoiser = SignDenoiser(
-        motion_dim=120,
+        motion_dim=528,
         max_motion_len=401,
         text_dim=512,
         pos_emb="cos",
-        stage_dim="256*4",
+        stage_dim="384*4",
         num_groups=16,
         patch_size=8,
         ssm_cfg={"d_state": 16, "d_conv": 4, "expand": 2},
@@ -288,13 +257,13 @@ def load_model(ckpt_path, device, guidance_scale=None, step_num=None):
     noise_scheduler = DDPMScheduler(
         num_train_timesteps=1000, beta_start=0.0001, beta_end=0.02,
         beta_schedule="squaredcos_cap_v2", variance_type="fixed_small",
-        clip_sample=False, prediction_type="sample",
+        clip_sample=False, prediction_type=pred_type,
     )
 
     sample_scheduler = UniPCMultistepScheduler(
         num_train_timesteps=1000, beta_start=0.0001, beta_end=0.02,
         beta_schedule="squaredcos_cap_v2", solver_order=2,
-        prediction_type="sample",
+        prediction_type=pred_type,
     )
 
     gs = guidance_scale or hparams.get('guidance_scale', 4.0)
@@ -351,10 +320,13 @@ def main():
     parser.add_argument('--data_root', default='/home/user/Projects/research/SOKE/data/How2Sign')
     parser.add_argument('--csl_root', default='/home/user/Projects/research/SOKE/data/CSL-Daily')
     parser.add_argument('--phoenix_root', default='/home/user/Projects/research/SOKE/data/Phoenix_2014T')
-    parser.add_argument('--mean_path', default='/home/user/Projects/research/SOKE/data/CSL-Daily/mean_120.pt')
-    parser.add_argument('--std_path', default='/home/user/Projects/research/SOKE/data/CSL-Daily/std_120.pt')
-    parser.add_argument('--csl_mean_path', default='/home/user/Projects/research/SOKE/data/CSL-Daily/csl_mean_120.pt')
-    parser.add_argument('--csl_std_path', default='/home/user/Projects/research/SOKE/data/CSL-Daily/csl_std_120.pt')
+    parser.add_argument('--npy_root', default='/home/user/Projects/research/SOKE/data/How2Sign_528d')
+    parser.add_argument('--csl_npy_root', default='/home/user/Projects/research/SOKE/data/CSL-Daily_528d')
+    parser.add_argument('--phoenix_npy_root', default='/home/user/Projects/research/SOKE/data/Phoenix_528d')
+    parser.add_argument('--mean_path', default='/home/user/Projects/research/SOKE/data/How2Sign_528d/mean_528.pt')
+    parser.add_argument('--std_path', default='/home/user/Projects/research/SOKE/data/How2Sign_528d/std_528.pt')
+    parser.add_argument('--csl_mean_path', default='/home/user/Projects/research/SOKE/data/CSL-Daily_528d/mean_528.pt')
+    parser.add_argument('--csl_std_path', default='/home/user/Projects/research/SOKE/data/CSL-Daily_528d/std_528.pt')
     parser.add_argument('--dataset', default='how2sign')
     parser.add_argument('--split', default='val')
     parser.add_argument('--num_samples', type=int, default=5)
@@ -368,8 +340,7 @@ def main():
     parser.add_argument('--step_num', type=int, default=None)
     # Visualization
     parser.add_argument('--fps', type=int, default=25)
-    parser.add_argument('--viewport', type=float, default=0.5)
-    parser.add_argument('--use_smplx', action='store_true')
+    parser.add_argument('--viewport', type=float, default=0)  # 0=auto
     parser.add_argument('--output', default='vis_generation_output')
     parser.add_argument('--device', default='cuda:0')
     args = parser.parse_args()
@@ -392,15 +363,15 @@ def main():
     # =========================================================================
     # 2. Load mean/std for denormalization
     # =========================================================================
-    mean = torch.load(args.mean_path, map_location='cpu').float()[:120]
-    std = torch.load(args.std_path, map_location='cpu').float()[:120]
+    mean = torch.load(args.mean_path, map_location='cpu').float()[:NFEATS]
+    std = torch.load(args.std_path, map_location='cpu').float()[:NFEATS]
     mean_np, std_np = mean.numpy(), std.numpy()
 
     csl_mean, csl_std = mean, std
     if os.path.exists(args.csl_mean_path):
-        csl_mean = torch.load(args.csl_mean_path, map_location='cpu').float()[:120]
+        csl_mean = torch.load(args.csl_mean_path, map_location='cpu').float()[:NFEATS]
     if os.path.exists(args.csl_std_path):
-        csl_std = torch.load(args.csl_std_path, map_location='cpu').float()[:120]
+        csl_std = torch.load(args.csl_std_path, map_location='cpu').float()[:NFEATS]
 
     # =========================================================================
     # 3. Generate & Visualize
@@ -428,15 +399,12 @@ def _run_text_mode(model, args, device, mean_np, std_np, mean, std, output_root)
         print(f"\n  [{i+1}/{len(texts)}] \"{text}\" (T={length})")
 
         with torch.no_grad():
-            generated = model.generate([text], [length])  # [1, T, 120]
+            generated = model.generate([text], [length])  # [1, T, 528]
 
-        gen_np = generated[0].cpu().numpy()  # [T, 120]
+        gen_np = generated[0].cpu().numpy()  # [T, 528]
         gen_raw = gen_np * (std_np + 1e-10) + mean_np
 
-        if args.use_smplx:
-            joints = feats_to_joints_smplx(gen_np, mean, std, args.device)
-        else:
-            joints = feats_to_joints(gen_raw)
+        joints = feats_to_joints(gen_raw)
 
         print(f"    output range: [{gen_raw.min():.3f}, {gen_raw.max():.3f}]")
 
@@ -458,12 +426,15 @@ def _run_val_mode(model, args, device, mean, std, mean_np, std_np,
         data_root=args.data_root,
         csl_root=args.csl_root,
         phoenix_root=args.phoenix_root,
+        npy_root=args.npy_root,
+        csl_npy_root=args.csl_npy_root,
+        phoenix_npy_root=args.phoenix_npy_root,
         split=args.split,
         mean=mean,
         std=std,
         csl_mean=csl_mean,
         csl_std=csl_std,
-        nfeats=120,
+        nfeats=NFEATS,
         dataset_name=args.dataset,
         max_motion_length=400,
         min_motion_length=20,
@@ -480,7 +451,7 @@ def _run_val_mode(model, args, device, mean, std, mean_np, std_np,
         if item is None:
             continue
 
-        gt_norm = item['motion'].numpy()           # [T, 120] normalized
+        gt_norm = item['motion'].numpy()           # [T, 528] normalized
         text = item['text']
         name = item['name']
         src = item.get('src', 'how2sign')
@@ -496,19 +467,13 @@ def _run_val_mode(model, args, device, mean, std, mean_np, std_np,
 
         # Generate from same text + length
         with torch.no_grad():
-            generated = model.generate([text], [T_len])  # [1, T, 120]
+            generated = model.generate([text], [T_len])  # [1, T, 528]
         gen_np = generated[0].cpu().numpy()
-        gen_raw = gen_np * (std_np + 1e-10) + mean_np  # generation은 항상 기본 mean/std
+        gen_raw = gen_np * (std_np + 1e-10) + mean_np
 
-        # Joints
-        if args.use_smplx:
-            m_t = csl_mean if src == 'csl' else mean
-            s_t = csl_std if src == 'csl' else std
-            gt_joints = feats_to_joints_smplx(gt_norm, m_t, s_t, args.device)
-            gen_joints = feats_to_joints_smplx(gen_np, mean, std, args.device)
-        else:
-            gt_joints = feats_to_joints(gt_raw)
-            gen_joints = feats_to_joints(gen_raw)
+        # Joints — 528D 처음 132D가 positions, FK 불필요
+        gt_joints = feats_to_joints(gt_raw)
+        gen_joints = feats_to_joints(gen_raw)
 
         # Metrics
         T = min(gt_raw.shape[0], gen_raw.shape[0])
