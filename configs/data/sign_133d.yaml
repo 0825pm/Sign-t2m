@@ -1,0 +1,37 @@
+_target_: src.data.sign_datamodule.SignDataModule
+
+# Annotation paths
+data_root: /home/user/Projects/research/SOKE/data/How2Sign
+csl_root: /home/user/Projects/research/SOKE/data/CSL-Daily
+phoenix_root: /home/user/Projects/research/SOKE/data/Phoenix_2014T
+
+# 133D npy paths
+npy_root: /home/user/Projects/research/SOKE/data/How2Sign_133d
+csl_npy_root: /home/user/Projects/research/SOKE/data/CSL-Daily_133d
+phoenix_npy_root: /home/user/Projects/research/SOKE/data/Phoenix_133d
+
+# Dataset params
+dataset_name: how2sign
+nfeats: 133
+motion_dim: 133
+njoints: 44
+fps: 25
+
+# Sequence limits
+max_motion_length: 400
+min_motion_length: 20
+
+# DataLoader params
+batch_size: 64
+num_workers: 8
+pin_memory: true
+
+# Stage
+stage: t2m
+
+# Normalization
+mean_path: /home/user/Projects/research/SOKE/data/How2Sign_133d/mean_133.pt
+std_path: /home/user/Projects/research/SOKE/data/How2Sign_133d/std_133.pt
+
+csl_mean_path: /home/user/Projects/research/SOKE/data/CSL-Daily_133d/mean_133.pt
+csl_std_path: /home/user/Projects/research/SOKE/data/CSL-Daily_133d/std_133.pt

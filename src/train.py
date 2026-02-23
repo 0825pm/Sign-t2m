@@ -1,6 +1,8 @@
 import os.path
 from typing import Any, Dict, List, Optional, Tuple
 
+import torch
+torch.backends.cudnn.enabled = False
 import hydra
 import lightning.pytorch as L
 import torch

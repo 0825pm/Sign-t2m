@@ -61,8 +61,8 @@ class SignMotionGeneration(L.LightningModule):
         # ⚠️ Verify prediction_type at startup
         pt = self.noise_scheduler.config.prediction_type
         print(f"[SignMotionGeneration] noise_scheduler prediction_type = '{pt}'")
-        assert pt == "epsilon", (
-            f"prediction_type must be 'epsilon', got '{pt}'. "
+        assert pt in ("epsilon", "sample", "v_prediction"), (
+            f"prediction_type must be 'epsilon'/'sample'/'v_prediction', got '{pt}'. "
             f"Check configs/model/noise_scheduler/DDPM_ori.yaml"
         )
 
@@ -132,6 +132,8 @@ class SignMotionGeneration(L.LightningModule):
             target = noise
         elif prediction_type == "sample":
             target = motion
+        elif prediction_type == "v_prediction":
+            target = self.noise_scheduler.get_velocity(motion, noise, timestep)
         else:
             raise ValueError(f"{prediction_type} not supported!")
 
@@ -298,12 +300,19 @@ class SignMotionGeneration(L.LightningModule):
                     pred_noise, t, pred_motion
                 ).prev_sample.float()
 
+            elif prediction_type == "v_prediction":
+                cond_v, uncond_v = output.chunk(2)
+                pred_v = uncond_v + self.hparams.guidance_scale * (cond_v - uncond_v)
+                pred_motion = self.sample_scheduler.step(
+                    pred_v, t, pred_motion
+                ).prev_sample.float()
+
             elif prediction_type == "sample":
                 cond_x0, uncond_x0 = output.chunk(2)
-                # CFG directly in x0 space
-                pred_x0 = uncond_x0 + self.hparams.guidance_scale * (cond_x0 - uncond_x0)
+                cond_eps, uncond_eps = self._obtain_eps_from_x0(cond_x0, uncond_x0, t, pred_motion)
+                pred_noise = uncond_eps + self.hparams.guidance_scale * (cond_eps - uncond_eps)
                 pred_motion = self.sample_scheduler.step(
-                    pred_x0, t, pred_motion
+                    pred_noise, t, pred_motion
                 ).prev_sample.float()
 
             else:

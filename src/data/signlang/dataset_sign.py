@@ -188,7 +188,7 @@ class SignMotionDataset(Dataset):
         
         # 6D (nfeats=240) vs 528D (nfeats=528) vs 기존 (nfeats=120) 분기
         use_6d = (self.nfeats == 240)
-        use_528d = (self.nfeats == 528)
+        use_528d = (self.nfeats in (133, 523, 528))
         orig_name = name  # load 실패 시 name 보존용
         
         if use_528d:

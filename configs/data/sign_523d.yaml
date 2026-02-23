@@ -1,0 +1,38 @@
+_target_: src.data.sign_datamodule.SignDataModule
+
+# Annotation paths (원본 — annotations만 여기서 로드)
+data_root: /home/user/Projects/research/SOKE/data/How2Sign
+csl_root: /home/user/Projects/research/SOKE/data/CSL-Daily
+phoenix_root: /home/user/Projects/research/SOKE/data/Phoenix_2014T
+
+# 523D npy paths (preprocess_523d.py 출력)
+npy_root: /home/user/Projects/research/SOKE/data/How2Sign_523d
+csl_npy_root: /home/user/Projects/research/SOKE/data/CSL-Daily_523d
+phoenix_npy_root: /home/user/Projects/research/SOKE/data/Phoenix_523d
+
+# Dataset params
+dataset_name: how2sign
+nfeats: 523
+motion_dim: 523
+njoints: 44
+fps: 25
+
+# Sequence limits
+max_motion_length: 400
+min_motion_length: 20
+
+# DataLoader params
+batch_size: 64
+num_workers: 8
+pin_memory: true
+
+# Stage
+stage: t2m
+
+# Normalization — preprocess_523d.py --compute_stats 출력
+mean_path: /home/user/Projects/research/SOKE/data/How2Sign_523d/mean_523.pt
+std_path: /home/user/Projects/research/SOKE/data/How2Sign_523d/std_523.pt
+
+# CSL 전용
+csl_mean_path: /home/user/Projects/research/SOKE/data/CSL-Daily_523d/mean_523.pt
+csl_std_path: /home/user/Projects/research/SOKE/data/CSL-Daily_523d/std_523.pt

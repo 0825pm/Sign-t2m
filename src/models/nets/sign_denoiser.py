@@ -240,7 +240,7 @@ class LocalModule(nn.Module):
 
 
 class MixedModule(nn.Module):
-    def __init__(self, model_dim, build_mamba_block_fn, patch_size=8, mask_padding=True, num_heads=4):
+    def __init__(self, model_dim, build_mamba_block_fn, patch_size=8, mask_padding=True):
         super().__init__()
         self.patch_size = patch_size
         self.mask_padding = mask_padding
@@ -254,12 +254,6 @@ class MixedModule(nn.Module):
         self.final_fc = nn.Linear(model_dim * 2, model_dim)
         self.norm = nn.LayerNorm(model_dim)
 
-        # Cross-attention: motion frames attend to text tokens
-        self.cross_attn = nn.MultiheadAttention(
-            embed_dim=model_dim, num_heads=num_heads,
-            batch_first=True, dropout=0.1,
-        )
-        self.cross_norm = nn.LayerNorm(model_dim)
 
         self.f_func = nn.Linear(model_dim * 2, model_dim)
         self.fuse_fn = nn.Linear(model_dim * 2, model_dim)
@@ -271,7 +265,7 @@ class MixedModule(nn.Module):
         x_hat = self.fuse_fn(torch.cat([x, _y_hat], dim=-1))
         return x_hat
 
-    def forward(self, x, x_mask, y, y_mask, text_hidden=None, text_mask=None):
+    def forward(self, x, x_mask, y, y_mask):
         if self.mask_padding:
             x[~x_mask] = x[~x_mask] * torch.zeros_like(x[~x_mask])
             y[~y_mask] = y[~y_mask] * torch.zeros_like(y[~y_mask])
@@ -287,11 +281,6 @@ class MixedModule(nn.Module):
 
         nx1 = self.local_conv(x1.permute(0, 2, 1)).permute(0, 2, 1)
 
-        # Cross-attention: downsampled motion queries attend to text token keys/values
-        if text_hidden is not None:
-            key_pad_mask = ~text_mask if text_mask is not None else None
-            attn_out, _ = self.cross_attn(nx1, text_hidden, text_hidden, key_padding_mask=key_pad_mask)
-            nx1 = self.cross_norm(nx1 + attn_out)
 
         x2 = self.inject_text(nx1, y)
 
@@ -325,11 +314,11 @@ class StageBlock(nn.Module):
         self.input_proj = nn.Linear(in_dim, dim) if in_dim != dim else nn.Identity()
         self.y_proj = nn.Linear(in_dim, dim) if in_dim != dim else nn.Identity()
 
-    def forward(self, x, x_mask, y, y_mask, text_hidden=None, text_mask=None):
+    def forward(self, x, x_mask, y, y_mask):
         x = self.input_proj(x)
         y_ = self.y_proj(y)
         x, _ = self.local_module1(x, x_mask, y_, y_mask)
-        x, _ = self.mixed_module(x, x_mask, y_, y_mask, text_hidden=text_hidden, text_mask=text_mask)
+        x, _ = self.mixed_module(x, x_mask, y_, y_mask)
         x, _ = self.local_module2(x, x_mask, y_, y_mask)
         return x, y
 
@@ -403,7 +392,6 @@ class SignDenoiser(nn.Module):
             self.m_input_proj = nn.Linear(motion_dim, base_dim)
 
         self.t_input_proj = nn.Linear(text_dim, base_dim)
-        self.t_hidden_proj = nn.Linear(text_dim, base_dim)  # project text token hidden states
         self.time_emb = nn.Linear(base_dim, base_dim)
 
         # Mamba stages
@@ -466,17 +454,13 @@ class SignDenoiser(nn.Module):
         text_feat = self.t_input_proj(text["text_emb"]).unsqueeze(1)
         text_mask = torch.ones(text_feat.shape[0], 1, dtype=torch.bool, device=text_feat.device)
 
-        # Token-level text hidden states for cross-attention
-        text_hidden = self.t_hidden_proj(text["hidden"].float())  # [B, L_text, base_dim]
-        text_hidden_mask = text["mask"]  # [B, L_text] bool
 
         x = torch.cat([time_emb, motion], dim=1)
         x_mask = torch.cat([time_mask, motion_mask], dim=1)
         x = self.pos_emb(x)
 
         for layer in self.layers:
-            x, text_feat = layer(x, x_mask, text_feat, text_mask,
-                                 text_hidden=text_hidden, text_mask=text_hidden_mask)
+            x, text_feat = layer(x, x_mask, text_feat, text_mask)
 
         out = x[:, 1:]  # remove time token
         out = self.m_output_proj(out)
