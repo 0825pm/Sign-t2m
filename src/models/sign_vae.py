@@ -94,6 +94,10 @@ class SignVAE(L.LightningModule):
         elif D == 120:
             weight[30:75] = hw    # lhand
             weight[75:120] = hw   # rhand
+        elif D == 133:
+            # 133D: root+body_ric[0:43] | lhand_ric[43:88] | rhand_ric[88:133]
+            weight[43:88] = hw    # lhand
+            weight[88:133] = hw   # rhand
         return weight
 
     def _compute_loss(self, feats_ref, feats_rst, dist, lengths):
@@ -227,6 +231,9 @@ class SignVAE(L.LightningModule):
             if D == 528:
                 body_idx = slice(0, 42)
                 hand_idx = slice(42, 132)
+            elif D == 133:
+                body_idx = slice(0, 43)
+                hand_idx = slice(43, 133)
             else:
                 body_idx = slice(0, 30)
                 hand_idx = slice(30, D)

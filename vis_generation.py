@@ -203,11 +203,30 @@ def save_single_video(joints, save_path, title='', fps=25, viewport=0.5):
 # 528D Feature → 44 Joints (직접 추출, FK 불필요!)
 # =============================================================================
 
-def feats_to_joints(features_raw):
-    """528D → 44-joint positions (처음 132D 추출)"""
+def feats_to_joints(features_raw, nfeats=528):
+    """feature → [T, 44, 3]"""
     T = features_raw.shape[0]
-    positions = features_raw[:, :132].reshape(T, 44, 3)
-    return positions
+    if nfeats == 133:
+        # 133D: root_motion[0:4] + body_ric[4:43] + lhand_ric[43:88] + rhand_ric[88:133]
+        # position 직접 사용, FK 불필요
+        pelvis   = np.zeros((T, 1, 3), dtype=np.float32)
+        body_ric = features_raw[:, 4:43].reshape(T, 13, 3)
+        body_14  = np.concatenate([pelvis, body_ric], axis=1)  # [T,14,3]
+        lhand    = features_raw[:, 43:88].reshape(T, 15, 3) + body_14[:, 12:13, :]
+        rhand    = features_raw[:, 88:133].reshape(T, 15, 3) + body_14[:, 13:14, :]
+        return np.concatenate([body_14, lhand, rhand], axis=1)  # [T,44,3]
+    elif nfeats == 360:
+        # 360D: body_pos[0:30] + lhand_pos[90:135] + rhand_pos[225:270]
+        body_pos  = features_raw[:, 0:30].reshape(T, 10, 3)
+        lhand_pos = features_raw[:, 90:135].reshape(T, 15, 3) + body_pos[:, 8:9, :]
+        rhand_pos = features_raw[:, 225:270].reshape(T, 15, 3) + body_pos[:, 9:10, :]
+        # body를 14-joint으로 padding (skeleton 호환)
+        pad = np.zeros((T, 4, 3), dtype=np.float32)
+        body_14 = np.concatenate([body_pos, pad], axis=1)
+        return np.concatenate([body_14, lhand_pos, rhand_pos], axis=1)  # [T,44,3]
+    else:
+        # 528D: positions 처음 132D
+        return features_raw[:, :132].reshape(T, 44, 3)
 
 
 # =============================================================================
@@ -241,12 +260,19 @@ def load_model(ckpt_path, device, guidance_scale=None, step_num=None):
     # Build components
     text_encoder = CLIP(freeze_lm=True)
 
+    # Auto-detect motion_dim and stage_dim from checkpoint weights
+    sd = ckpt['state_dict']
+    motion_dim = sd['denoiser.m_input_proj.weight'].shape[1]   # [stage_dim, motion_dim]
+    stage_dim  = sd['denoiser.m_input_proj.weight'].shape[0]   # [stage_dim, motion_dim]
+    print(f"  motion_dim from checkpoint: {motion_dim}")
+    print(f"  stage_dim  from checkpoint: {stage_dim}")
+
     denoiser = SignDenoiser(
-        motion_dim=528,
+        motion_dim=motion_dim,
         max_motion_len=401,
         text_dim=512,
         pos_emb="cos",
-        stage_dim="384*4",
+        stage_dim=f"{stage_dim}*4",
         num_groups=16,
         patch_size=8,
         ssm_cfg={"d_state": 16, "d_conv": 4, "expand": 2},
@@ -263,7 +289,7 @@ def load_model(ckpt_path, device, guidance_scale=None, step_num=None):
     sample_scheduler = UniPCMultistepScheduler(
         num_train_timesteps=1000, beta_start=0.0001, beta_end=0.02,
         beta_schedule="squaredcos_cap_v2", solver_order=2,
-        prediction_type=pred_type,
+        prediction_type='epsilon',  # FINDINGS.md: 항상 epsilon 하드코딩!
     )
 
     gs = guidance_scale or hparams.get('guidance_scale', 4.0)
@@ -313,6 +339,7 @@ def main():
     parser = argparse.ArgumentParser(description='Sign-t2m Generation Visualization')
     # Checkpoint
     parser.add_argument('--ckpt', required=True, help='path to .ckpt')
+    parser.add_argument('--nfeats', type=int, default=133, choices=[133, 360, 528])
     # Mode
     parser.add_argument('--mode', default='val', choices=['val', 'text'],
                         help='val: GT comparison / text: free generation')
@@ -344,6 +371,9 @@ def main():
     parser.add_argument('--output', default='vis_generation_output')
     parser.add_argument('--device', default='cuda:0')
     args = parser.parse_args()
+
+    global NFEATS
+    NFEATS = args.nfeats
 
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -404,7 +434,7 @@ def _run_text_mode(model, args, device, mean_np, std_np, mean, std, output_root)
         gen_np = generated[0].cpu().numpy()  # [T, 528]
         gen_raw = gen_np * (std_np + 1e-10) + mean_np
 
-        joints = feats_to_joints(gen_raw)
+        joints = feats_to_joints(gen_raw, NFEATS)
 
         print(f"    output range: [{gen_raw.min():.3f}, {gen_raw.max():.3f}]")
 
@@ -472,8 +502,8 @@ def _run_val_mode(model, args, device, mean, std, mean_np, std_np,
         gen_raw = gen_np * (std_np + 1e-10) + mean_np
 
         # Joints — 528D 처음 132D가 positions, FK 불필요
-        gt_joints = feats_to_joints(gt_raw)
-        gen_joints = feats_to_joints(gen_raw)
+        gt_joints = feats_to_joints(gt_raw, NFEATS)
+        gen_joints = feats_to_joints(gen_raw, NFEATS)
 
         # Metrics
         T = min(gt_raw.shape[0], gen_raw.shape[0])

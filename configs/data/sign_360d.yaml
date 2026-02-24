@@ -1,0 +1,32 @@
+_target_: src.data.sign_datamodule.SignDataModule
+
+# annotation 원본 경로
+data_root: /home/user/Projects/research/SOKE/data/How2Sign
+csl_root: /home/user/Projects/research/SOKE/data/CSL-Daily
+phoenix_root: /home/user/Projects/research/SOKE/data/Phoenix_2014T
+
+# 360D npy 경로 (preprocess_360d.py 출력)
+npy_root: /home/user/Projects/research/SOKE/data/data360/How2Sign
+csl_npy_root: /home/user/Projects/research/SOKE/data/data360/CSL-Daily
+phoenix_npy_root: /home/user/Projects/research/SOKE/data/data360/Phoenix_2014T
+
+dataset_name: how2sign
+nfeats: 360
+motion_dim: 360
+njoints: 40
+fps: 25
+
+max_motion_length: 400
+min_motion_length: 20
+
+batch_size: 64
+num_workers: 8
+pin_memory: true
+
+stage: t2m
+
+mean_path: /home/user/Projects/research/SOKE/data/data360/How2Sign/mean_360.pt
+std_path: /home/user/Projects/research/SOKE/data/data360/How2Sign/std_360.pt
+
+csl_mean_path: /home/user/Projects/research/SOKE/data/data360/CSL-Daily/mean_360.pt
+csl_std_path: /home/user/Projects/research/SOKE/data/data360/CSL-Daily/std_360.pt

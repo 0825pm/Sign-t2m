@@ -117,6 +117,29 @@ def convert_179_to_120(clip_poses):
     return clip_poses[:, 36:156]
 
 
+def convert_179_to_133(clip_poses):
+    """179-dim → 133-dim (SOKE 133D: axis-angle format)
+
+    179-dim layout:
+      [0:3]    root_pose
+      [3:66]   body_pose (21j × 3)
+      [66:111] lhand_pose (15j × 3)
+      [111:156] rhand_pose (15j × 3)
+      [156:159] jaw_pose
+      [159:169] shape (betas)
+      [169:179] expression
+
+    133D = upper_body(30) + lhand(45) + rhand(45) + jaw(3) + expr(10)
+      [36:156]  → 120D (same as convert_179_to_120)
+      [156:159] → jaw 3D
+      [169:179] → expr 10D
+    """
+    body_hand = clip_poses[:, 36:156]   # 120D
+    jaw       = clip_poses[:, 156:159]  # 3D
+    expr      = clip_poses[:, 169:179]  # 10D
+    return np.concatenate([body_hand, jaw, expr], axis=-1)  # 133D
+
+
 def load_h2s_sample(ann, data_dir, need_pose=True, code_path=None, need_code=False):
     """Load How2Sign sample
     
@@ -168,6 +191,113 @@ def load_h2s_sample(ann, data_dir, need_pose=True, code_path=None, need_code=Fal
         clip_poses = np.zeros([len(pkl_files), 120], dtype=np.float32)
     
     return clip_poses.astype(np.float32), clip_text, name, None
+
+
+def load_h2s_sample_133(ann, data_dir, **kwargs):
+    """How2Sign 133D axis-angle (SOKE format)"""
+    clip_poses, text, name, _ = load_h2s_sample(ann, data_dir)
+    if clip_poses is None:
+        return None, None, None, None
+    # load_h2s_sample returns 120D; reload raw and convert to 133D
+    clip_text = ann['text']
+    name = ann['name']
+    split = ann.get('split', 'train')
+    fps = ann.get('fps', 25)
+
+    pose_dir = os.path.join(data_dir, split, 'poses', name)
+    if not os.path.exists(pose_dir):
+        pose_dir = os.path.join(data_dir, 'poses', name)
+    if not os.path.exists(pose_dir):
+        return None, None, None, None
+
+    pkl_files = sorted(
+        [f for f in os.listdir(pose_dir) if f.endswith('.pkl')],
+        key=extract_frame_num
+    )
+    if fps > 24:
+        target_count = int(24 * len(pkl_files) / fps)
+        pkl_files = _subsample(pkl_files, target_count)
+    if len(pkl_files) < 4:
+        return None, None, None, None
+
+    raw = np.zeros([len(pkl_files), 179], dtype=np.float32)
+    for i, frame in enumerate(pkl_files):
+        try:
+            with open(os.path.join(pose_dir, frame), 'rb') as f:
+                d = pickle.load(f)
+            pose = get_pose_from_pkl(d)
+            if pose is not None and len(pose) >= 179:
+                raw[i] = pose[:179]
+            elif pose is not None:
+                raw[i, :len(pose)] = pose
+        except:
+            continue
+
+    return convert_179_to_133(raw).astype(np.float32), clip_text, name, None
+
+
+def load_csl_sample_133(ann, data_dir, **kwargs):
+    """CSL-Daily 133D axis-angle (SOKE format)"""
+    clip_text = ann['text']
+    name = ann['name']
+
+    pose_dir = os.path.join(data_dir, 'poses', name)
+    if not os.path.exists(pose_dir):
+        return None, None, None, None
+
+    frame_list = sorted(
+        [f for f in os.listdir(pose_dir) if f.endswith('.pkl')],
+        key=extract_frame_num
+    )
+    if len(frame_list) < 4:
+        return None, None, None, None
+
+    raw = np.zeros([len(frame_list), 179], dtype=np.float32)
+    for i, frame in enumerate(frame_list):
+        try:
+            with open(os.path.join(pose_dir, frame), 'rb') as f:
+                d = pickle.load(f)
+            pose = get_pose_from_pkl(d)
+            if pose is not None and len(pose) >= 179:
+                raw[i] = pose[:179]
+            elif pose is not None:
+                raw[i, :len(pose)] = pose
+        except:
+            continue
+
+    return convert_179_to_133(raw).astype(np.float32), clip_text, name, None
+
+
+def load_phoenix_sample_133(ann, data_dir, **kwargs):
+    """Phoenix-2014T 133D axis-angle (SOKE format)"""
+    clip_text = ann['text']
+    name = ann['name']
+
+    pose_dir = os.path.join(data_dir, name)
+    if not os.path.exists(pose_dir):
+        return None, None, None, None
+
+    frame_list = sorted(
+        [f for f in os.listdir(pose_dir) if f.endswith('.pkl')],
+        key=extract_frame_num
+    )
+    if len(frame_list) < 4:
+        return None, None, None, None
+
+    raw = np.zeros([len(frame_list), 179], dtype=np.float32)
+    for i, frame in enumerate(frame_list):
+        try:
+            with open(os.path.join(pose_dir, frame), 'rb') as f:
+                d = pickle.load(f)
+            pose = get_pose_from_pkl(d)
+            if pose is not None and len(pose) >= 179:
+                raw[i] = pose[:179]
+            elif pose is not None:
+                raw[i, :len(pose)] = pose
+        except:
+            continue
+
+    return convert_179_to_133(raw).astype(np.float32), clip_text, name, None
 
 
 def load_csl_sample(ann, data_dir, need_pose=True, code_path=None, need_code=False):
@@ -351,3 +481,35 @@ def load_npy_sample(ann, data_dir, dataset_type='how2sign'):
 
     motion = np.load(npy_path)
     return motion.astype(np.float32), text, name, None
+
+def load_npy_sample_360(ann, data_root_360, dataset_type='how2sign'):
+    """360D npy 로드 — data360/{How2Sign,CSL-Daily,Phoenix_2014T}/{split}/*.npy"""
+    name  = ann['name']
+    text  = ann.get('text', '')
+    split = ann.get('split', 'train')
+    save_name = name.split('/')[-1] if '/' in name else name
+
+    if dataset_type == 'how2sign':
+        npy_path = os.path.join(data_root_360, split, f'{save_name}.npy')
+    elif dataset_type == 'csl':
+        npy_path = os.path.join(data_root_360, split, f'{save_name}.npy')
+    elif dataset_type == 'phoenix':
+        npy_path = os.path.join(data_root_360, split, f'{save_name}.npy')
+    else:
+        npy_path = os.path.join(data_root_360, f'{save_name}.npy')
+
+    if not os.path.exists(npy_path):
+        return None, None, None, None
+
+    motion = np.load(npy_path)
+    return motion.astype(np.float32), text, name, None
+
+
+POS120_IDX = list(range(0,30)) + list(range(90,135)) + list(range(225,270))
+
+def load_npy_sample_pos120(ann, data_root_360, dataset_type='how2sign'):
+    """360D npy에서 position만 추출 → 120D [body(30)+lhand(45)+rhand(45)]"""
+    motion, text, name, _ = load_npy_sample_360(ann, data_root_360, dataset_type)
+    if motion is None:
+        return None, None, None, None
+    return motion[:, POS120_IDX].astype(np.float32), text, name, None

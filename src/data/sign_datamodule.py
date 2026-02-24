@@ -6,7 +6,7 @@ import os
 import os.path as osp
 import torch
 from lightning.pytorch import LightningDataModule
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, ConcatDataset
 from src.utils.feats2joints import feats2joints_smplx
 
 from .signlang import (
@@ -34,6 +34,8 @@ class SignDataModule(LightningDataModule):
         # CSL 전용 mean/std
         csl_mean_path: str = None,
         csl_std_path: str = None,
+        phoenix_mean_path: str = None,
+        phoenix_std_path: str = None,
         batch_size: int = 64,
         val_batch_size: int = -1,
         test_batch_size: int = 1,
@@ -48,6 +50,7 @@ class SignDataModule(LightningDataModule):
         dataset_name: str = 'how2sign_csl_phoenix',
         stage: str = 'lm',
         motion_dim: int = 120,
+        repeat_dataset: int = 1,  # Light-T2M: 5
         **kwargs
     ):
         super().__init__()
@@ -85,6 +88,14 @@ class SignDataModule(LightningDataModule):
             self.csl_std = torch.load(csl_std_path)[:nfeats]
         else:
             self.csl_std = self.std  # fallback to general
+        if phoenix_mean_path and osp.exists(phoenix_mean_path):
+            self.phoenix_mean = torch.load(phoenix_mean_path)[:nfeats]
+        else:
+            self.phoenix_mean = self.mean
+        if phoenix_std_path and osp.exists(phoenix_std_path):
+            self.phoenix_std = torch.load(phoenix_std_path)[:nfeats]
+        else:
+            self.phoenix_std = self.std
         
         self.dataloader_options = {
             "num_workers": num_workers,
@@ -133,6 +144,8 @@ class SignDataModule(LightningDataModule):
             # CSL 전용 mean/std 전달
             'csl_mean': self.csl_mean,
             'csl_std': self.csl_std,
+            'phoenix_mean': self.phoenix_mean,
+            'phoenix_std': self.phoenix_std,
         }
         
         DatasetClass = SignMotionDataset if self.stage == 'vae' else SignText2MotionDataset
@@ -152,7 +165,9 @@ class SignDataModule(LightningDataModule):
             self.setup('fit')
         options = self.dataloader_options.copy()
         options["batch_size"] = self.hparams.batch_size
-        return DataLoader(dataset=self.train_dataset, shuffle=True, drop_last=True, **options)
+        repeat = self.hparams.repeat_dataset
+        dataset = ConcatDataset([self.train_dataset] * repeat) if repeat > 1 else self.train_dataset
+        return DataLoader(dataset=dataset, shuffle=True, drop_last=True, **options)
     
     def val_dataloader(self):
         if self.val_dataset is None:

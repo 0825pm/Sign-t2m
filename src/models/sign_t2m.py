@@ -148,6 +148,14 @@ class SignMotionGeneration(L.LightningModule):
                 # 120D: body[0:30] + lhand[30:75] + rhand[75:120]
                 weight[30:75] = hand_weight
                 weight[75:120] = hand_weight
+            elif D == 133:
+                # 133D: root(4)+body_ric(39) | lhand_ric(45) | rhand_ric(45)
+                weight[43:88] = hand_weight
+                weight[88:133] = hand_weight
+            elif D == 360:
+                # 360D: body[0:90] | lhand[90:225] | rhand[225:360]
+                weight[90:225] = hand_weight
+                weight[225:360] = hand_weight
             elif D == 528:
                 # 528D: 44 joints = 4 spine + 10 body + 15 lhand + 15 rhand
                 # positions[0:132]: lhand[42:87], rhand[87:132]
@@ -186,6 +194,14 @@ class SignMotionGeneration(L.LightningModule):
                 # 528D positions: spine+body[0:42], lhand+rhand[42:132]
                 body_idx = slice(0, 42)
                 hand_idx = slice(42, 132)
+            elif D == 360:
+                # 360D: body[0:90], lhand+rhand[90:360]
+                body_idx = slice(0, 90)
+                hand_idx = slice(90, 360)
+            elif D == 133:
+                # 133D: root+body_ric[0:43], lhand+rhand[43:133]
+                body_idx = slice(0, 43)
+                hand_idx = slice(43, 133)
             else:
                 # 120D: body[0:30], hand[30:120]
                 body_idx = slice(0, 30)
@@ -258,6 +274,12 @@ class SignMotionGeneration(L.LightningModule):
         if D == 528:
             body_idx = slice(0, 42)
             hand_idx = slice(42, 132)
+        elif D == 360:
+            body_idx = slice(0, 90)
+            hand_idx = slice(90, 360)
+        elif D == 133:
+            body_idx = slice(0, 43)
+            hand_idx = slice(43, 133)
         else:
             body_idx = slice(0, 30)
             hand_idx = slice(30, D)

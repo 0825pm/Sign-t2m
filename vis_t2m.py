@@ -143,11 +143,37 @@ def to_joints(feats_norm, mean_np, std_np):
     raw = feats_norm * (std_np + 1e-10) + mean_np
     D = raw.shape[-1]
     if D == 133:
-        return to_joints_133(raw)
+        # 133D = axis-angle (SOKE format) → SMPLX FK
+        try:
+            from src.utils.feats2joints import feats2joints_smplx
+            import torch
+            mean_t = torch.from_numpy(mean_np).float()
+            std_t  = torch.from_numpy(std_np).float()
+            feat_t = torch.from_numpy(feats_norm).float().unsqueeze(0)  # [1,T,133]
+            _, joints = feats2joints_smplx(feat_t, mean_t, std_t)
+            joints_np = joints[0].cpu().numpy()  # [T, 144, 3]
+            # 44 joints만 사용 (body14 + lhand15 + rhand15)
+            # SMPLX joint indices: pelvis=0, body1-13, lwrist=20, rwrist=21, lhand=25-39, rhand=40-54
+            BODY_IDX  = list(range(0, 14))
+            LHAND_IDX = list(range(25, 40))
+            RHAND_IDX = list(range(40, 55))
+            sel = BODY_IDX + LHAND_IDX + RHAND_IDX
+            return joints_np[:, sel, :]  # [T, 44, 3]
+        except Exception as e:
+            print(f"[vis_t2m] SMPLX FK failed ({e}), fallback to approx")
+            return _joints_133_approx(raw)
     elif D == 523:
         return to_joints_523(raw)
     else:
         return to_joints_528(raw)
+
+
+def _joints_133_approx(raw):
+    """SMPLX 없을 때 133D axis-angle → 44-joint 근사 (시각화만 가능)"""
+    T = raw.shape[0]
+    joints = np.zeros((T, 44, 3), dtype=np.float32)
+    # axis-angle을 position으로 직접 쓰는 건 불가, 0으로 채움 (경고용 fallback)
+    return joints
 
 # =============================================================================
 # Model Loading

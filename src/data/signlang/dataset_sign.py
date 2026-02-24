@@ -14,6 +14,9 @@ from tqdm import tqdm
 from .load_data import (
     load_h2s_sample, load_csl_sample, load_phoenix_sample,
     load_h2s_sample_6d, load_csl_sample_6d, load_phoenix_sample_6d,
+    load_h2s_sample_133, load_csl_sample_133, load_phoenix_sample_133,
+    load_npy_sample_360,
+    load_npy_sample_pos120,
     load_npy_sample,
 )
 
@@ -56,6 +59,8 @@ class SignMotionDataset(Dataset):
         phoenix_npy_root=None,
         csl_mean=None,
         csl_std=None,
+        phoenix_mean=None,
+        phoenix_std=None,
         **kwargs
     ):
         self.dataset_name = dataset_name
@@ -85,12 +90,22 @@ class SignMotionDataset(Dataset):
             self.csl_std = csl_std[:self.nfeats] if len(csl_std) > self.nfeats else csl_std
         else:
             self.csl_std = self.std
+        if phoenix_mean is not None:
+            self.phoenix_mean = phoenix_mean[:self.nfeats] if len(phoenix_mean) > self.nfeats else phoenix_mean
+        else:
+            self.phoenix_mean = self.mean
+        if phoenix_std is not None:
+            self.phoenix_std = phoenix_std[:self.nfeats] if len(phoenix_std) > self.nfeats else phoenix_std
+        else:
+            self.phoenix_std = self.std
         
         # numpy 변환 (캐싱)
         self.mean_np = self.mean.numpy() if isinstance(self.mean, torch.Tensor) else self.mean
         self.std_np = self.std.numpy() if isinstance(self.std, torch.Tensor) else self.std
         self.csl_mean_np = self.csl_mean.numpy() if isinstance(self.csl_mean, torch.Tensor) else self.csl_mean
         self.csl_std_np = self.csl_std.numpy() if isinstance(self.csl_std, torch.Tensor) else self.csl_std
+        self.phoenix_mean_np = self.phoenix_mean.numpy() if isinstance(self.phoenix_mean, torch.Tensor) else self.phoenix_mean
+        self.phoenix_std_np = self.phoenix_std.numpy() if isinstance(self.phoenix_std, torch.Tensor) else self.phoenix_std
         
         self.all_data = []
         self.h2s_len = 0
@@ -107,6 +122,8 @@ class SignMotionDataset(Dataset):
         """데이터셋별 mean/std 반환"""
         if src == 'csl':
             return self.csl_mean_np, self.csl_std_np
+        elif src == 'phoenix':
+            return self.phoenix_mean_np, self.phoenix_std_np
         else:
             return self.mean_np, self.std_np
     
@@ -186,12 +203,40 @@ class SignMotionDataset(Dataset):
         src = sample['src']
         name = sample['name']
         
-        # 6D (nfeats=240) vs 528D (nfeats=528) vs 기존 (nfeats=120) 분기
-        use_6d = (self.nfeats == 240)
-        use_528d = (self.nfeats in (133, 523, 528))
-        orig_name = name  # load 실패 시 name 보존용
-        
-        if use_528d:
+        # 6D (nfeats=240) vs 528D/523D npy (nfeats=523,528) vs 133D pkl vs 기존 (nfeats=120) 분기
+        use_6d   = (self.nfeats == 240)
+        use_528d = (self.nfeats in (133, 523, 528))  # 133도 npy 로더 사용
+        use_133d = (self.nfeats == 133)
+        use_360d = (self.nfeats == 360)
+        use_pos120 = (self.nfeats == 120 and self.npy_root is not None)
+        orig_name = name
+
+        if use_pos120:
+            npy360_h2s     = self.npy_root
+            npy360_csl     = self.csl_npy_root or self.csl_root
+            npy360_phoenix = self.phoenix_npy_root or self.phoenix_root
+            if src == 'how2sign':
+                clip_poses, text, name, _ = load_npy_sample_pos120(sample, npy360_h2s, 'how2sign')
+            elif src == 'csl':
+                clip_poses, text, name, _ = load_npy_sample_pos120(sample, npy360_csl, 'csl')
+            elif src == 'phoenix':
+                clip_poses, text, name, _ = load_npy_sample_pos120(sample, npy360_phoenix, 'phoenix')
+            else:
+                clip_poses, text = None, ""
+        elif use_360d:
+            # 360D: npy_root(data360)에서 로드, annotation은 원본 root_dir에서
+            npy360_h2s     = self.npy_root or self.root_dir
+            npy360_csl     = self.csl_npy_root or self.csl_root
+            npy360_phoenix = self.phoenix_npy_root or self.phoenix_root
+            if src == 'how2sign':
+                clip_poses, text, name, _ = load_npy_sample_360(sample, npy360_h2s, 'how2sign')
+            elif src == 'csl':
+                clip_poses, text, name, _ = load_npy_sample_360(sample, npy360_csl, 'csl')
+            elif src == 'phoenix':
+                clip_poses, text, name, _ = load_npy_sample_360(sample, npy360_phoenix, 'phoenix')
+            else:
+                clip_poses, text = None, ""
+        elif use_528d:
             # 528D: npy_root에서 로드 (annotations은 기존 경로)
             if src == 'how2sign':
                 clip_poses, text, name, _ = load_npy_sample(
@@ -204,6 +249,7 @@ class SignMotionDataset(Dataset):
                     sample, self.phoenix_npy_root or self.phoenix_root, 'phoenix')
             else:
                 clip_poses, text = None, ""
+
         elif src == 'how2sign':
             if use_6d:
                 clip_poses, text, name, _ = load_h2s_sample_6d(sample, self.root_dir)

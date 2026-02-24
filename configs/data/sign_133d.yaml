@@ -1,11 +1,11 @@
 _target_: src.data.sign_datamodule.SignDataModule
 
-# Annotation paths
+# Annotation + pose pkl paths (SOKE 원본 데이터)
 data_root: /home/user/Projects/research/SOKE/data/How2Sign
 csl_root: /home/user/Projects/research/SOKE/data/CSL-Daily
 phoenix_root: /home/user/Projects/research/SOKE/data/Phoenix_2014T
 
-# 133D npy paths
+# 133D npy (extract_133d.py로 생성 — 523D에서 position columns 추출)
 npy_root: /home/user/Projects/research/SOKE/data/How2Sign_133d
 csl_npy_root: /home/user/Projects/research/SOKE/data/CSL-Daily_133d
 phoenix_npy_root: /home/user/Projects/research/SOKE/data/Phoenix_133d
@@ -23,15 +23,19 @@ min_motion_length: 20
 
 # DataLoader params
 batch_size: 64
+repeat_dataset: 1
 num_workers: 8
 pin_memory: true
 
 # Stage
 stage: t2m
 
-# Normalization
+# Normalization (compute_stats_133d.py로 생성)
 mean_path: /home/user/Projects/research/SOKE/data/How2Sign_133d/mean_133.pt
 std_path: /home/user/Projects/research/SOKE/data/How2Sign_133d/std_133.pt
 
 csl_mean_path: /home/user/Projects/research/SOKE/data/CSL-Daily_133d/mean_133.pt
 csl_std_path: /home/user/Projects/research/SOKE/data/CSL-Daily_133d/std_133.pt
+
+phoenix_mean_path: /home/user/Projects/research/SOKE/data/Phoenix_133d/mean_133.pt
+phoenix_std_path: /home/user/Projects/research/SOKE/data/Phoenix_133d/std_133.pt

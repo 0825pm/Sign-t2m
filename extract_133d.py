@@ -67,7 +67,8 @@ def compute_stats(npy_dir, stat_dir):
         d = np.load(os.path.join(npy_dir, f))
         running_sq += ((d - mean) ** 2).sum(axis=0).astype(np.float64)
     std = np.sqrt(running_sq / total).astype(np.float32)
-    std = np.clip(std, 1e-6, None)
+    std = np.where(std < 1e-4, 1.0, std)  # std≈0인 상수 차원은 1.0으로
+    std = np.maximum(std, 0.05)  # 최소 std 0.05 보장 (outlier 폭발 방지)
 
     os.makedirs(stat_dir, exist_ok=True)
     torch.save(torch.from_numpy(mean), os.path.join(stat_dir, 'mean_133.pt'))
@@ -85,6 +86,7 @@ def compute_stats(npy_dir, stat_dir):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', default='all', choices=['how2sign', 'csl', 'phoenix', 'all'])
+    parser.add_argument('--stats_only', action='store_true')
     args = parser.parse_args()
 
     datasets = ['how2sign', 'csl', 'phoenix'] if args.dataset == 'all' else [args.dataset]
@@ -112,11 +114,12 @@ def main():
         print(f"\n{'='*50}")
         print(f"  {ds}: 523D → 133D")
         print(f"{'='*50}")
-        for src_sub, dst_sub in info['splits']:
-            src = os.path.join(info['src'], src_sub)
-            dst = os.path.join(info['dst'], dst_sub)
-            if os.path.exists(src):
-                process_dir(src, dst)
+        if not args.stats_only:
+            for src_sub, dst_sub in info['splits']:
+                src = os.path.join(info['src'], src_sub)
+                dst = os.path.join(info['dst'], dst_sub)
+                if os.path.exists(src):
+                    process_dir(src, dst)
 
         train_dir = os.path.join(info['dst'], info['train_dir'])
         if os.path.exists(train_dir):
