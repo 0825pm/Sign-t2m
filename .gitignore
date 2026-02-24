@@ -17,3 +17,4 @@ build/
 vis_*/
 experiments/
 *.png
+*.mp4
