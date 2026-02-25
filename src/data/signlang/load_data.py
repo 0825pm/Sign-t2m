@@ -508,8 +508,15 @@ def load_npy_sample_360(ann, data_root_360, dataset_type='how2sign'):
 POS120_IDX = list(range(0,30)) + list(range(90,135)) + list(range(225,270))
 
 def load_npy_sample_pos120(ann, data_root_360, dataset_type='how2sign'):
-    """360D npy에서 position만 추출 → 120D [body(30)+lhand(45)+rhand(45)]"""
+    """360D npy에서 position만 추출 → 120D [body(30)+lhand(45)+rhand(45)]
+    
+    360D npy인 경우: POS120_IDX로 슬라이싱
+    133D npy인 경우: [:120] = upper_body(30)+lhand(45)+rhand(45) 직접 사용
+    """
     motion, text, name, _ = load_npy_sample_360(ann, data_root_360, dataset_type)
     if motion is None:
         return None, None, None, None
-    return motion[:, POS120_IDX].astype(np.float32), text, name, None
+    if motion.shape[1] >= 270:  # 360D npy
+        return motion[:, POS120_IDX].astype(np.float32), text, name, None
+    else:  # 133D npy: upper_body(30)+lhand(45)+rhand(45) = [:120]
+        return motion[:, :120].astype(np.float32), text, name, None

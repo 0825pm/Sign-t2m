@@ -1,0 +1,4 @@
+_target_: src.models.nets.text_encoder.MBartTextEncoder
+model_path: /home/user/Projects/research/SOKE/deps/mbart-h2s-csl-phoenix
+freeze_lm: true
+output_dim: 512

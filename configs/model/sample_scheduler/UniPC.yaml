@@ -4,6 +4,6 @@ beta_start: ${model.noise_scheduler.beta_start}
 beta_end: ${model.noise_scheduler.beta_end}
 beta_schedule: ${model.noise_scheduler.beta_schedule}
 solver_order: 2
-prediction_type: epsilon
+prediction_type: ${model.noise_scheduler.prediction_type}
 thresholding: False
 sample_max_value: 1.0
