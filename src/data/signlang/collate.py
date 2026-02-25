@@ -33,6 +33,7 @@ def sign_collate(batch: List[Dict]) -> Dict:
     lengths = [b['motion_len'] for b in batch]
     texts = [b['text'] for b in batch]
     names = [b['name'] for b in batch]
+    srcs = [b.get('src', '') for b in batch]
     
     batch_size = len(batch)
     max_len = max(lengths)
@@ -50,4 +51,5 @@ def sign_collate(batch: List[Dict]) -> Dict:
         'motion_len': torch.tensor(lengths),
         'text': texts,
         'name': names,
+        'src': srcs,
     }
