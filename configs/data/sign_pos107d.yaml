@@ -1,0 +1,36 @@
+_target_: src.data.sign_datamodule.SignDataModule
+
+# annotation 원본
+data_root: /home/user/Projects/research/SOKE/data/How2Sign
+csl_root: /home/user/Projects/research/SOKE/data/CSL-Daily
+phoenix_root: /home/user/Projects/research/SOKE/data/Phoenix_2014T
+
+# 360D npy에서 alive pos dims 슬라이싱 (dead body dims 제거)
+npy_root: /home/user/Projects/research/SOKE/data/data360/How2Sign
+csl_npy_root: /home/user/Projects/research/SOKE/data/data360/CSL-Daily
+phoenix_npy_root: /home/user/Projects/research/SOKE/data/data360/Phoenix_2014T
+
+dataset_name: how2sign
+nfeats: 107
+motion_dim: 107
+njoints: 40
+fps: 25
+
+max_motion_length: 400
+min_motion_length: 20
+
+batch_size: 64
+num_workers: 8
+pin_memory: true
+
+stage: t2m
+
+# pos107 stats (make_pos107_stats.py로 생성)
+mean_path: /home/user/Projects/research/SOKE/data/data360/How2Sign/mean_pos107.pt
+std_path: /home/user/Projects/research/SOKE/data/data360/How2Sign/std_pos107.pt
+
+csl_mean_path: /home/user/Projects/research/SOKE/data/data360/CSL-Daily/mean_pos107.pt
+csl_std_path: /home/user/Projects/research/SOKE/data/data360/CSL-Daily/std_pos107.pt
+
+phoenix_mean_path: /home/user/Projects/research/SOKE/data/data360/Phoenix_2014T/mean_pos107.pt
+phoenix_std_path: /home/user/Projects/research/SOKE/data/data360/Phoenix_2014T/std_pos107.pt
