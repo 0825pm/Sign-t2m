@@ -120,25 +120,29 @@ class SignMotionGeneration(L.LightningModule):
 
         loss_raw = F.mse_loss(output, target, reduction="none")  # [B, T, D]
 
-        # Per-part mean loss (dim 수 차이 보정)
-        # body와 hand 각각 dim별 mean 후 합산 → dim 수에 무관하게 균등 기여
+        # Part-weighted loss: uniform per-dim mean (equal gradient per dim)
+        # hand_loss_weight < 1 → body에 상대적으로 더 많은 gradient
+        # hand_loss_weight = 1 → 모든 dim 동일 gradient (기본)
+        # hand_loss_weight > 1 → hand에 상대적으로 더 많은 gradient
         hand_weight = self.hparams.hand_loss_weight
-        D = loss_raw.shape[-1]
-        if D == 107:
-            body_s, hand_s = slice(0, 17), slice(17, 107)
-        elif D == 120:
-            body_s, hand_s = slice(0, 30), slice(30, 120)
-        elif D == 133:
-            body_s, hand_s = slice(0, 43), slice(43, 133)
-        elif D == 360:
-            body_s, hand_s = slice(0, 90), slice(90, 360)
-        else:
-            body_s, hand_s = slice(0, 30), slice(30, D)
+        if hand_weight != 1.0:
+            D = loss_raw.shape[-1]
+            weight = torch.ones(D, device=loss_raw.device)
+            if D == 107:
+                weight[17:62] = hand_weight    # lhand
+                weight[62:107] = hand_weight   # rhand
+            elif D == 120:
+                weight[30:75] = hand_weight
+                weight[75:120] = hand_weight
+            elif D == 133:
+                weight[43:88] = hand_weight
+                weight[88:133] = hand_weight
+            elif D == 360:
+                weight[90:225] = hand_weight
+                weight[225:360] = hand_weight
+            loss_raw = loss_raw * weight
 
-        m = padding_mask  # [B, T]
-        body_loss = loss_raw[m][..., body_s].mean()
-        hand_loss_val = loss_raw[m][..., hand_s].mean()
-        loss = body_loss + hand_weight * hand_loss_val
+        loss = loss_raw[padding_mask].mean()
 
         # Velocity loss
         vel_weight = self.hparams.vel_loss_weight
