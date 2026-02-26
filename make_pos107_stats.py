@@ -36,22 +36,27 @@ datasets = {
     'Phoenix_2014T': '/home/user/Projects/research/SOKE/data/data360/Phoenix_2014T',
 }
 
+DEAD_BODY_LOCAL = sorted(set(range(30)) - set(ALIVE_BODY_LOCAL))  # 13 dead dims
+print(f"  dead body local: {DEAD_BODY_LOCAL}")
+
 for name, base in datasets.items():
     print(f'\n=== {name} ===')
-    all_frames = []
+    all_107 = []
+    all_body30 = []  # full 30D body position (for vis dead-dim filling)
     for split in ['train']:
         files = glob.glob(f'{base}/{split}/*.npy')
         print(f'  {split}: {len(files)} files')
         for f in files:
             data = np.load(f)
-            pos107 = data[:, ALIVE_POS_IDX]
-            all_frames.append(pos107)
+            all_107.append(data[:, ALIVE_POS_IDX])
+            all_body30.append(data[:, POS120_IDX[:30]])  # full 30D body pos
 
-    all_frames = np.concatenate(all_frames, axis=0)
-    print(f'  Total frames: {all_frames.shape[0]}, dims: {all_frames.shape[1]}')
+    all_107 = np.concatenate(all_107, axis=0)
+    all_body30 = np.concatenate(all_body30, axis=0)
+    print(f'  Total frames: {all_107.shape[0]}, dims: {all_107.shape[1]}')
 
-    mean = all_frames.mean(axis=0)
-    std = all_frames.std(axis=0)
+    mean = all_107.mean(axis=0)
+    std = all_107.std(axis=0)
 
     print(f'  std range (raw): {std.min():.6f} ~ {std.max():.4f}')
     near_zero = (std < 0.01).sum()
@@ -67,3 +72,9 @@ for name, base in datasets.items():
     torch.save(mean_t, f'{base}/mean_pos107.pt')
     torch.save(std_t, f'{base}/std_pos107.pt')
     print(f'  Saved: {base}/mean_pos107.pt, std_pos107.pt')
+
+    # Full 30D body position mean (시각화에서 dead dim 채우기 용)
+    body30_mean = all_body30.mean(axis=0)  # [30]
+    body30_mean_t = torch.from_numpy(body30_mean).float()
+    torch.save(body30_mean_t, f'{base}/body30_mean.pt')
+    print(f'  Saved: {base}/body30_mean.pt  (for visualization dead-dim fill)')
