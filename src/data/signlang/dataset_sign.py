@@ -208,7 +208,7 @@ class SignMotionDataset(Dataset):
         use_528d = (self.nfeats in (133, 523, 528))  # 133도 npy 로더 사용
         use_133d = (self.nfeats == 133)
         use_360d = (self.nfeats == 360)
-        use_pos120 = (self.nfeats == 120 and self.npy_root is not None)
+        use_pos120 = (self.nfeats in (107, 120) and self.npy_root is not None)
         orig_name = name
 
         if use_pos120:
