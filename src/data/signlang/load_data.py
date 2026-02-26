@@ -507,21 +507,12 @@ def load_npy_sample_360(ann, data_root_360, dataset_type='how2sign'):
 
 POS120_IDX = list(range(0,30)) + list(range(90,135)) + list(range(225,270))
 
-# pos107: dead body dims 제거 (std < 0.01인 pelvis/spine/collar 등 13개 제거)
-# alive body in pos120 local: [7,10,11,13,16,18-29] = 17 dims
-# hands: 90 dims (unchanged)
-_ALIVE_BODY_LOCAL = [7, 10, 11, 13, 16] + list(range(18, 30))
-ALIVE_POS_IDX = [POS120_IDX[i] for i in _ALIVE_BODY_LOCAL + list(range(30, 120))]  # 107
-
 def load_npy_sample_pos120(ann, data_root_360, dataset_type='how2sign'):
-    """360D npy에서 position만 추출 → 107D [alive_body(17)+lhand(45)+rhand(45)]
-
-    Dead body dims (pelvis, spine 등 near-constant) 제거됨.
-    """
+    """360D npy에서 position dims만 추출 → 120D [body(30)+lhand(45)+rhand(45)]"""
     motion, text, name, _ = load_npy_sample_360(ann, data_root_360, dataset_type)
     if motion is None:
         return None, None, None, None
     if motion.shape[1] >= 270:  # 360D npy
-        return motion[:, ALIVE_POS_IDX].astype(np.float32), text, name, None
+        return motion[:, POS120_IDX].astype(np.float32), text, name, None
     else:
-        return motion[:, :107].astype(np.float32), text, name, None
+        return motion[:, :120].astype(np.float32), text, name, None

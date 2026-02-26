@@ -4,29 +4,22 @@ vis_generation.py — Sign-t2m Text→Motion 생성 시각화
 Usage:
     cd ~/Projects/research/sign-t2m
 
-    # pos107 — GT 비교 (val set, 3 datasets)
+    # 120D — GT 비교 (val set, 3 datasets)
     python vis_generation.py \
         --ckpt logs/.../checkpoints/last.ckpt \
-        --nfeats 107 --mode val \
+        --nfeats 120 --mode val \
         --dataset how2sign_csl_phoenix \
         --npy_root /home/user/Projects/research/SOKE/data/data360/How2Sign \
         --csl_npy_root /home/user/Projects/research/SOKE/data/data360/CSL-Daily \
         --phoenix_npy_root /home/user/Projects/research/SOKE/data/data360/Phoenix_2014T \
-        --num_samples 10 --output vis_output/pos107
+        --num_samples 10 --output vis_output/pos120
 
-    # pos107 — 자유 텍스트 생성 (multilingual)
+    # 120D — 자유 텍스트 생성 (multilingual)
     python vis_generation.py \
         --ckpt logs/.../checkpoints/last.ckpt \
-        --nfeats 107 --mode text \
+        --nfeats 120 --mode text \
         --texts "a woman explains the weather forecast" "今天天气很好" "morgen wird es regnen" \
-        --lengths 100 80 80 --output vis_output/pos107_text
-
-    # 120D (legacy)
-    python vis_generation.py \
-        --ckpt logs/.../checkpoints/last.ckpt \
-        --nfeats 120 --mode val --dataset phoenix \
-        --mean_path .../mean_120.pt --std_path .../std_120.pt \
-        --num_samples 5
+        --lengths 100 80 80 --output vis_output/pos120_text
 """
 
 import os
@@ -48,10 +41,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # Constants — 44-joint skeleton
 # =============================================================================
 NFEATS = 528  # overridden by --nfeats
-
-# pos107 alive body dims mapping (in pos120 local space)
-_ALIVE_BODY_LOCAL_107 = [7, 10, 11, 13, 16] + list(range(18, 30))  # 17 dims
-_DEAD_BODY_LOCAL_107  = sorted(set(range(30)) - set(_ALIVE_BODY_LOCAL_107))  # 13 dims
 
 SPINE_CONNECTIONS = [(0, 1), (1, 2), (2, 3), (3, 4)]
 BODY_CONNECTIONS = [
@@ -139,84 +128,11 @@ def feats120_to_joints44(features_raw, device='cuda:0'):
 # Feature -> 44 Joints  (nfeats 자동 분기)
 # =============================================================================
 
-def _reconstruct_body30_from_107(body17, body30_mean=None):
-    """pos107의 alive body 17 dims → full body 30 dims (10 joints × 3) 복원
-
-    alive body layout (17 dims → pos120 local index):
-        pos107[0]     → local 7  = joint 2 y
-        pos107[1]     → local 10 = joint 3 y
-        pos107[2]     → local 11 = joint 3 z
-        pos107[3]     → local 13 = joint 4 y
-        pos107[4]     → local 16 = joint 5 y
-        pos107[5:8]   → local 18-20 = joint 6 xyz
-        pos107[8:11]  → local 21-23 = joint 7 xyz
-        pos107[11:14] → local 24-26 = joint 8 xyz  (lhand 기준점)
-        pos107[14:17] → local 27-29 = joint 9 xyz  (rhand 기준점)
-    """
-    T = body17.shape[0]
-    body30 = np.zeros((T, 30), dtype=np.float32)
-
-    # dead dims: body30_mean에서 채우기 (없으면 0 → spine 보간으로 대체)
-    if body30_mean is not None:
-        body30[:] = body30_mean[np.newaxis, :]
-
-    # alive dims 배치
-    for i, ai in enumerate(_ALIVE_BODY_LOCAL_107):
-        body30[:, ai] = body17[:, i]
-
-    body_joints = body30.reshape(T, 10, 3)
-
-    # body30_mean 없을 때: spine joints 0-5의 dead x,z를 shoulder 중간으로 보간
-    if body30_mean is None:
-        mid = (body_joints[:, 6, :] + body_joints[:, 7, :]) / 2  # shoulder midpoint
-        for j in range(6):
-            body_joints[:, j, 0] = mid[:, 0]  # x
-            body_joints[:, j, 2] = mid[:, 2]  # z
-        # joint 0,1: y도 dead → joint 2 y에서 비례 보간
-        y2 = body_joints[:, 2, 1]
-        body_joints[:, 0, 1] = y2 * 0.4
-        body_joints[:, 1, 1] = y2 * 0.7
-
-    return body_joints
-
-
-def feats107_to_joints44(features_raw, body30_mean=None):
-    """107D pos → [T, 44, 3] joint positions
-
-    body:  17 alive dims → 10 joints (dead dims from body30_mean or interpolated)
-    lhand: 45 dims (relative to body joint 8) → 15 joints
-    rhand: 45 dims (relative to body joint 9) → 15 joints
-    """
-    T = features_raw.shape[0]
-
-    body_joints = _reconstruct_body30_from_107(
-        features_raw[:, :17], body30_mean)  # [T, 10, 3]
-
-    lhand_rel = features_raw[:, 17:62].reshape(T, 15, 3)
-    rhand_rel = features_raw[:, 62:107].reshape(T, 15, 3)
-
-    # 360D와 동일: hands는 wrist(body[8], body[9]) 기준 상대좌표
-    lhand_abs = lhand_rel + body_joints[:, 8:9, :]
-    rhand_abs = rhand_rel + body_joints[:, 9:10, :]
-
-    # 44-joint skeleton: [body10 + pad4 + lhand15 + rhand15]
-    # pad[2]=joint12(left_wrist), pad[3]=joint13(right_wrist) → hand 연결용
-    pad = np.zeros((T, 4, 3), dtype=np.float32)
-    pad[:, 2, :] = body_joints[:, 8, :]   # left wrist
-    pad[:, 3, :] = body_joints[:, 9, :]   # right wrist
-    body14 = np.concatenate([body_joints, pad], axis=1)
-
-    return np.concatenate([body14, lhand_abs, rhand_abs], axis=1)
-
-
-def feats_to_joints(features_raw, nfeats=528, device='cuda:0', body30_mean=None):
+def feats_to_joints(features_raw, nfeats=528, device='cuda:0'):
     """[T, D] -> [T, 44, 3]"""
     T = features_raw.shape[0]
 
-    if nfeats == 107:
-        return feats107_to_joints44(features_raw, body30_mean=body30_mean)
-
-    elif nfeats == 120:
+    if nfeats == 120:
         try:
             return feats120_to_joints44(features_raw, device=device)
         except Exception as e:
@@ -467,17 +383,7 @@ def load_model(ckpt_path, device, guidance_scale=None, step_num=None):
 # Text mode
 # =============================================================================
 
-def _get_denorm(stats, src):
-    """데이터셋별 mean/std numpy 반환"""
-    if src == 'csl':
-        return stats['csl_mean'].numpy(), stats['csl_std'].numpy()
-    elif src == 'phoenix':
-        return stats['phoenix_mean'].numpy(), stats['phoenix_std'].numpy()
-    else:
-        return stats['mean_np'], stats['std_np']
-
-
-def _run_text_mode(model, args, device, stats, output_root):
+def _run_text_mode(model, args, device, mean_np, std_np, output_root):
     texts   = args.texts   or ["a person waves hello"]
     lengths = args.lengths or [100] * len(texts)
     assert len(texts) == len(lengths), "--texts와 --lengths 개수가 달라요"
@@ -495,14 +401,12 @@ def _run_text_mode(model, args, device, stats, output_root):
     for i, (text, length) in enumerate(zip(texts, lengths)):
         src = default_src
         print(f"\n  [{i+1}/{len(texts)}] \"{text}\" (T={length}, src={src})")
-        m_np, s_np = _get_denorm(stats, src)
 
         with torch.no_grad():
             generated = model.generate([text], [length], srcs=[src])
         gen_np  = generated[0].cpu().numpy()
-        gen_raw = gen_np * np.maximum(s_np, 0.01) + m_np
-        joints  = feats_to_joints(gen_raw, NFEATS, device=str(device),
-                                  body30_mean=stats.get('body30_mean'))
+        gen_raw = gen_np * np.maximum(std_np, 0.01) + mean_np
+        joints  = feats_to_joints(gen_raw, NFEATS, device=str(device))
         print(f"    output range: [{gen_raw.min():.3f}, {gen_raw.max():.3f}]")
         safe_text = text[:40].replace(' ', '_').replace('/', '_')
         path = os.path.join(output_root, f'{i:03d}_{safe_text}.mp4')
@@ -514,7 +418,8 @@ def _run_text_mode(model, args, device, stats, output_root):
 # Val mode
 # =============================================================================
 
-def _run_val_mode(model, args, device, stats, output_root):
+def _run_val_mode(model, args, device, mean, std, mean_np, std_np,
+                  csl_mean, csl_std, output_root):
     print(f"\n[2/3] Val mode: {args.dataset} / {args.split}")
 
     from src.data.signlang.dataset_sign import SignText2MotionDataset
@@ -524,9 +429,8 @@ def _run_val_mode(model, args, device, stats, output_root):
         phoenix_root=args.phoenix_root, npy_root=args.npy_root,
         csl_npy_root=args.csl_npy_root, phoenix_npy_root=args.phoenix_npy_root,
         split=args.split,
-        mean=stats['mean'], std=stats['std'],
-        csl_mean=stats['csl_mean'], csl_std=stats['csl_std'],
-        phoenix_mean=stats['phoenix_mean'], phoenix_std=stats['phoenix_std'],
+        mean=mean, std=std,
+        csl_mean=csl_mean, csl_std=csl_std,
         nfeats=NFEATS, dataset_name=args.dataset,
         max_motion_length=400, min_motion_length=20,
     )
@@ -535,8 +439,6 @@ def _run_val_mode(model, args, device, stats, output_root):
     indices = np.linspace(0, len(dataset) - 1, n, dtype=int)
     print(f"  Dataset: {len(dataset)} samples, visualizing {n}")
     print(f"\n[3/3] Generating...")
-
-    body30_mean = stats.get('body30_mean')
 
     for idx_i, ds_idx in enumerate(indices):
         item = dataset[ds_idx]
@@ -549,20 +451,17 @@ def _run_val_mode(model, args, device, stats, output_root):
         src     = item.get('src', 'how2sign')
         T_len   = item['motion_len']
 
-        # GT 역정규화 (데이터셋별 mean/std)
-        m_np, s_np = _get_denorm(stats, src)
-        gt_raw = gt_norm * np.maximum(s_np, 0.01) + m_np
+        # GT 역정규화
+        gt_raw = gt_norm * np.maximum(std_np, 0.01) + mean_np
 
-        # 생성 → 역정규화 (같은 src의 mean/std 사용)
+        # 생성 → 역정규화
         with torch.no_grad():
             generated = model.generate([text], [T_len], srcs=[src])
         gen_np  = generated[0].cpu().numpy()
-        gen_raw = gen_np * np.maximum(s_np, 0.01) + m_np
+        gen_raw = gen_np * np.maximum(std_np, 0.01) + mean_np
 
-        gt_joints  = feats_to_joints(gt_raw,  NFEATS, device=str(device),
-                                     body30_mean=body30_mean)
-        gen_joints = feats_to_joints(gen_raw, NFEATS, device=str(device),
-                                     body30_mean=body30_mean)
+        gt_joints  = feats_to_joints(gt_raw,  NFEATS, device=str(device))
+        gen_joints = feats_to_joints(gen_raw, NFEATS, device=str(device))
 
         T    = min(gt_raw.shape[0], gen_raw.shape[0])
         rmse = np.sqrt(np.mean((gt_raw[:T] - gen_raw[:T]) ** 2))
@@ -585,8 +484,8 @@ def _run_val_mode(model, args, device, stats, output_root):
 def main():
     parser = argparse.ArgumentParser(description='Sign-t2m Generation Visualization')
     parser.add_argument('--ckpt', required=True)
-    parser.add_argument('--nfeats', type=int, default=107,
-                        choices=[107, 120, 133, 360, 528])
+    parser.add_argument('--nfeats', type=int, default=120,
+                        choices=[120, 133, 360, 528])
     parser.add_argument('--mode', default='val', choices=['val', 'text'])
     # data paths
     parser.add_argument('--data_root',
@@ -599,20 +498,13 @@ def main():
     parser.add_argument('--csl_npy_root',     default=None)
     parser.add_argument('--phoenix_npy_root', default=None)
     parser.add_argument('--mean_path',
-        default='/home/user/Projects/research/SOKE/data/data360/How2Sign/mean_pos107.pt')
+        default='/home/user/Projects/research/SOKE/data/data360/How2Sign/mean_pos120.pt')
     parser.add_argument('--std_path',
-        default='/home/user/Projects/research/SOKE/data/data360/How2Sign/std_pos107.pt')
+        default='/home/user/Projects/research/SOKE/data/data360/How2Sign/std_pos120.pt')
     parser.add_argument('--csl_mean_path',
-        default='/home/user/Projects/research/SOKE/data/data360/CSL-Daily/mean_pos107.pt')
+        default='/home/user/Projects/research/SOKE/data/data360/CSL-Daily/mean_pos120.pt')
     parser.add_argument('--csl_std_path',
-        default='/home/user/Projects/research/SOKE/data/data360/CSL-Daily/std_pos107.pt')
-    parser.add_argument('--phoenix_mean_path',
-        default='/home/user/Projects/research/SOKE/data/data360/Phoenix_2014T/mean_pos107.pt')
-    parser.add_argument('--phoenix_std_path',
-        default='/home/user/Projects/research/SOKE/data/data360/Phoenix_2014T/std_pos107.pt')
-    parser.add_argument('--body30_mean_path',
-        default='/home/user/Projects/research/SOKE/data/data360/How2Sign/body30_mean.pt',
-        help='30D body position mean for dead-dim filling (vis only)')
+        default='/home/user/Projects/research/SOKE/data/data360/CSL-Daily/std_pos120.pt')
     parser.add_argument('--dataset',     default='how2sign_csl_phoenix')
     parser.add_argument('--split',       default='val')
     parser.add_argument('--num_samples', type=int, default=5)
@@ -655,31 +547,11 @@ def main():
     if args.csl_std_path and os.path.exists(args.csl_std_path):
         csl_std  = torch.load(args.csl_std_path,  map_location='cpu').float()[:NFEATS]
 
-    phoenix_mean, phoenix_std = mean, std
-    if hasattr(args, 'phoenix_mean_path') and args.phoenix_mean_path and os.path.exists(args.phoenix_mean_path):
-        phoenix_mean = torch.load(args.phoenix_mean_path, map_location='cpu').float()[:NFEATS]
-    if hasattr(args, 'phoenix_std_path') and args.phoenix_std_path and os.path.exists(args.phoenix_std_path):
-        phoenix_std  = torch.load(args.phoenix_std_path,  map_location='cpu').float()[:NFEATS]
-
-    # body30_mean: pos107 시각화에서 dead body dim 채우기 용
-    body30_mean = None
-    if NFEATS == 107 and args.body30_mean_path and os.path.exists(args.body30_mean_path):
-        body30_mean = torch.load(args.body30_mean_path, map_location='cpu').float().numpy()
-        print(f"  Loaded body30_mean for vis dead-dim fill")
-    elif NFEATS == 107:
-        print(f"  WARNING: body30_mean.pt not found → spine interpolation fallback")
-
-    stats = {
-        'mean': mean, 'std': std, 'mean_np': mean_np, 'std_np': std_np,
-        'csl_mean': csl_mean, 'csl_std': csl_std,
-        'phoenix_mean': phoenix_mean, 'phoenix_std': phoenix_std,
-        'body30_mean': body30_mean,
-    }
-
     if args.mode == 'text':
-        _run_text_mode(model, args, device, stats, output_root)
+        _run_text_mode(model, args, device, mean_np, std_np, output_root)
     else:
-        _run_val_mode(model, args, device, stats, output_root)
+        _run_val_mode(model, args, device, mean, std, mean_np, std_np,
+                      csl_mean, csl_std, output_root)
 
     print(f"\n{'='*60}")
     print(f"Done. Videos saved to {output_root}")

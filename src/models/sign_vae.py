@@ -91,9 +91,6 @@ class SignVAE(L.LightningModule):
                              (174, 219), (219, 264),     # vel hands
                              (348, 438), (438, 528)]:    # rot hands
                     weight[s:e] *= hw
-        elif D == 107:
-            weight[17:62] = hw    # lhand
-            weight[62:107] = hw   # rhand
         elif D == 120:
             weight[30:75] = hw    # lhand
             weight[75:120] = hw   # rhand
@@ -237,9 +234,6 @@ class SignVAE(L.LightningModule):
             elif D == 133:
                 body_idx = slice(0, 43)
                 hand_idx = slice(43, 133)
-            elif D == 107:
-                body_idx = slice(0, 17)
-                hand_idx = slice(17, 107)
             else:
                 body_idx = slice(0, 30)
                 hand_idx = slice(30, D)

@@ -128,10 +128,7 @@ class SignMotionGeneration(L.LightningModule):
         if hand_weight != 1.0:
             D = loss_raw.shape[-1]
             weight = torch.ones(D, device=loss_raw.device)
-            if D == 107:
-                weight[17:62] = hand_weight    # lhand
-                weight[62:107] = hand_weight   # rhand
-            elif D == 120:
+            if D == 120:
                 weight[30:75] = hand_weight
                 weight[75:120] = hand_weight
             elif D == 133:
@@ -164,8 +161,6 @@ class SignMotionGeneration(L.LightningModule):
                 body_idx, hand_idx = slice(0, 90), slice(90, 360)
             elif D == 133:
                 body_idx, hand_idx = slice(0, 43), slice(43, 133)
-            elif D == 107:
-                body_idx, hand_idx = slice(0, 17), slice(17, 107)
             else:
                 body_idx, hand_idx = slice(0, 30), slice(30, D)
 
@@ -238,8 +233,6 @@ class SignMotionGeneration(L.LightningModule):
             body_idx, hand_idx = slice(0, 90), slice(90, 360)
         elif D == 133:
             body_idx, hand_idx = slice(0, 43), slice(43, 133)
-        elif D == 107:
-            body_idx, hand_idx = slice(0, 17), slice(17, 107)
         else:
             body_idx, hand_idx = slice(0, 30), slice(30, D)
 
