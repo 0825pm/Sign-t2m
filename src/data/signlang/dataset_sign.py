@@ -276,9 +276,9 @@ class SignMotionDataset(Dataset):
             clip_poses = np.zeros((self.min_motion_length, self.nfeats), dtype=np.float32)
             text = ""
         
-        # 데이터셋별 mean/std로 정규화
+        # 데이터셋별 mean/std로 정규화 (std floor=0.01 for numerical stability)
         mean_np, std_np = self._get_mean_std_np(src)
-        clip_poses = (clip_poses - mean_np) / (std_np + 1e-10)
+        clip_poses = (clip_poses - mean_np) / np.maximum(std_np, 0.01)
         
         # Adjust length
         m_length = clip_poses.shape[0]

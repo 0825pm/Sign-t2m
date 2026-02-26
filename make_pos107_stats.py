@@ -53,8 +53,13 @@ for name, base in datasets.items():
     mean = all_frames.mean(axis=0)
     std = all_frames.std(axis=0)
 
-    print(f'  std range: {std.min():.4f} ~ {std.max():.4f}')
-    print(f'  min std check (should be > 0.01): {std.min():.6f}')
+    print(f'  std range (raw): {std.min():.6f} ~ {std.max():.4f}')
+    near_zero = (std < 0.01).sum()
+    if near_zero > 0:
+        print(f'  WARNING: {near_zero} dims with std < 0.01 → clamping to 0.01')
+        print(f'  near-zero dim indices: {np.where(std < 0.01)[0].tolist()}')
+    std = np.maximum(std, 0.01)
+    print(f'  std range (clamped): {std.min():.6f} ~ {std.max():.4f}')
 
     mean_t = torch.from_numpy(mean).float()
     std_t = torch.from_numpy(std).float()
